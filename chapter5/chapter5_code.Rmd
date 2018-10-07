@@ -1,0 +1,606 @@
+# 5章code
+
+```{r}
+source("https://bioconductor.org/biocLite.R")
+biocLite("ropls") # インストールするパッケージの指定
+```
+
+```{r}
+library(ropls)
+```
+
+```{r}
+data(sacurine)
+```
+
+```{r}
+head(sacurine$variableMetadata)
+```
+
+```{r}
+working_df <- data.frame(sacurine$sampleMetadata, sacurine$dataMatrix)
+```
+
+```{r}
+library(FactoMineR)
+library(factoextra)
+pca_res <- PCA(working_df[, 4:112],  # データ読み込み
+               graph = FALSE,
+               ncp = 10) # 結果に保存する主成分の数
+```
+
+```{r}
+fviz_pca_var(pca_res, # 上記で作成・保存したPCAの結果
+             axes = c(1, 2), # 表示したい成分の指定
+             col.var="contrib", # 寄与率を色で表記
+             repel = TRUE,  # ラベルの重なりをなるべく回避
+             labelsize = 1  # ラベルのフォントサイズ
+             )
+```
+
+```{r}
+fviz_screeplot(pca_res, # 上記で作成・保存したPCAの結果
+               addlabels = TRUE, # ラベルを表示するかどうか
+               ylim = c(0, 20))　# 縦軸の下限・上限の指定
+```
+
+```{r}
+fviz_contrib(pca_res, # 上記で作成・保存したPCAの結果
+             choice = "var", # 変数を指定
+             axes = 1,       # 寄与率を見たい成分の指定
+             top = 5)        # 上位いくつめの成分まで表示するか
+
+```
+
+```{r}
+fviz_pca_ind(pca_res, 
+             habillage = working_df$gender, # 色分けしたいグループの指定
+             geom="point", # 点のみの表示
+             pointsize = 3, # 点の大きさ指定
+             repel = TRUE, # ラベル表記の重なりをなるべく避ける
+             addEllipses = TRUE, # 円の表示をするかどうか
+             ellipse.level = 0.95  # 楕円の領域
+             )
+```
+
+```{r}
+fviz_pca_ind(pca_res, 
+             axes = c(5, 9), # 表示したい成分の指定
+             habillage = working_df$gender, # 色分けしたいグループの指定
+             geom="point", # 点のみの表示
+             pointsize = 3, # 点の大きさ指定
+             repel = TRUE, # ラベル表記の重なりをなるべく避ける
+             addEllipses = TRUE # 円の表示をするかどうか
+             )
+```
+
+```{r}
+source("https://bioconductor.org/biocLite.R")
+biocLite("ComplexHeatmap")
+```
+
+```{r}
+library(ComplexHeatmap)
+```
+
+```{r}
+claster_working_df <- scale(working_df[, 4:112], # データの標準化
+                            center = TRUE, 
+                            scale = TRUE) 
+
+Heatmap(claster_working_df, # 標準化したデータの指定
+        row_names_gp = gpar(fontsize = 4), # x軸のフォントサイズ
+        row_names_max_width = unit(7, "cm"),　# x軸の高さ
+        column_names_gp = gpar(fontsize = 6), # y軸のフォントサイズ
+        column_names_max_height = unit(15, "cm"), # y軸の高さ
+        row_title = "ID",                         # y軸の名前
+        column_title = "Metabolome",　　　　　　   # x軸の名前
+        split = working_df$gender # 男女で分割
+        )
+```
+
+```{r}
+install.packages("GGally")
+```
+
+```{r}
+library(GGally)
+```
+
+```{r}
+ggpairs(data = working_df[, 1:8],      # 一部のデータを指定
+        mapping = aes(color = gender)) # 性別で色分け
+```
+
+```{r}
+res_t_test <- apply(working_df[, 4:112], 2, 
+                    function(x) t.test(x ~ working_df$gender)$p.value) 
+
+bonferoni_res <- p.adjust(res_t_test, 
+                          method = "bonferroni", # ボンフェローニ法でp値を補正
+                          n = ncol(working_df[, 4:112])) # 補正に使う変数の数指定
+```
+
+```{r}
+bonferoni_res <- data.frame(bonferoni_res) # 結果を見やすくするためデータフレームに変形
+
+subset(bonferoni_res, bonferoni_res < 0.05) # p値 < 0.05の因子を抽出
+```
+
+```{r}
+#表示を簡略化するため一部のみ解析
+fdr_res <- p.adjust(res_t_test, 
+                     method = "fdr", # false-discovory rateでp値を補正
+                     n = ncol(working_df[, 4:112])) # 補正に使う変数の数指定
+
+fdr_res <- data.frame(fdr_res) # 結果を見やすくするためデータフレームに変形
+
+subset(fdr_res, fdr_res < 0.05) # fdr値 < 0.05の因子を抽出
+```
+
+```{r}
+library(ropls)
+```
+
+```{r}
+#筆者PCで1分程度
+data(sacurine)
+set.seed(71)
+opls_res <- opls(sacurine$dataMatrix, # データの指定（Matrix形式である必要がある）
+                 sacurine$sampleMetadata[, "gender"], # 目的変数を指定
+                 predI = 1,   # 使う主成分の数
+                 orthoI = NA, # NAでOPLS-DA実行, 0にするとPLS-DAになる
+                 permI = 500, # permutation回数の指定
+                 crossvalI = 7, # クロスバリデーションfold (デフォルト = 7)
+                 scaleC = "standard", # 標準化の方法 (デフォルト:平均0, 分散1にスケーリング)
+                 printL = FALSE, # 結果の表示
+                 plotL = FALSE)  # 図表の表示
+```
+
+```{r}
+opls_res
+```
+
+```{r}
+layout(matrix(1:4, nrow = 2, byrow = TRUE)) # 表示する因子数および行の数
+for(typeC in c("x-score", "overview", "permutation", "outlier")) # 表示する因子
+  
+plot(opls_res, 
+     typeVc = typeC,     # 上記コードで指定した因子の読み込み
+     parDevNewL = FALSE  # 新規ウインドウで開かないように設定
+)
+```
+
+```{r}
+subset(opls_res@vipVn, opls_res@vipVn > 1.5)
+```
+
+```{r}
+library(ropls)
+data(sacurine)
+working_df <- data.frame(sacurine$sampleMetadata, sacurine$dataMatrix)
+working_df$age <- NULL
+working_df$bmi <- NULL
+```
+
+```{r}
+install.packages(c("devtools", "caret", "ranger", "glmnet"), dependencies = TRUE)
+devtools::install_github("xrobin/pROC")
+```
+
+```{r}
+library(caret)
+library(ranger)
+library(glmnet)
+library(pROC)
+library(ggplot2)
+```
+
+```{r}
+set.seed(71)
+trainIndex <- createDataPartition(working_df$gender, # 目的変数の指定
+                                  p = 0.7,           # 分割割合
+                                  list = FALSE)
+
+train_set <- working_df[trainIndex, ]
+test_set  <- working_df[-trainIndex, ]
+```
+
+```{r}
+nrow(working_df)
+nrow(train_set)
+nrow(test_set)
+```
+
+```{r}
+set.seed(71)
+tr = trainControl(
+  method = "repeatedcv", # 最適化の方法
+  number = 5,　# 5-fold CV
+  repeats = 5, # 繰り返し回数
+  summaryFunction = twoClassSummary, # 2群分類
+  classProbs = TRUE)  # 確率で結果を出力
+```
+
+```{r}
+train_grid_lasso = expand.grid(alpha = 1, lambda = 10 ^ (0:10 * -1)) 
+```
+
+```{r}
+set.seed(71) #乱数の固定
+lasso_fit_class = train(train_set[, -1],  # 説明変数
+                        train_set$gender,　　 # 目的変数
+                        method = "glmnet",　　 # lassoが含まれるパッケージの指定
+                        tuneGrid = train_grid_lasso, # パラメータ探索の設定
+                        trControl=tr,                # クロスバリデーションの設定
+                        preProc = c("center", "scale"), # 標準化
+                        metric = "ROC")　　　　　       # 最適化する対象
+lasso_fit_class
+```
+
+```{r}
+pred_test_lasso <- predict(lasso_fit_class, test_set[, -1]) # 予測値の作成
+rocRes_lasso <- roc(test_set$gender, as.numeric(pred_test_lasso)) # ROC, AUCの算出
+rocRes_lasso$auc  # AUCの表示
+rocRes_lasso$sensitivities # 感度の表示
+rocRes_lasso$specificities # 特異度の表示
+```
+
+```{r}
+ggroc(rocRes_lasso)
+```
+
+```{r}
+varImp(lasso_fit_class)
+```
+
+```{r}
+varImp(lasso_fit_class, scale = FALSE)
+```
+
+```{r}
+plot(varImp(lasso_fit_class, scale = FALSE), 
+     top = 30)
+```
+
+```{r}
+coef(lasso_fit_class$finalModel, lasso_fit_class$bestTune$.lambda)
+```
+
+```{r}
+devtools::install_github('sinhrks/ggfortify')
+```
+
+```{r}
+library(ggfortify)
+autoplot(lasso_fit_class$finalModel, xvar = "lambda") + theme(legend.position = 'none')
+```
+
+```{r}
+library("ranger")
+train_grid_rf = expand.grid(mtry = 1:10, # 変数の数
+                            splitrule = "gini",
+                            min.node.size = 5) 
+```
+
+```{r, warning=FALSE}
+set.seed(71) # 乱数の固定
+rf_fit_class = train(train_set[, -1],  # 説明変数　
+                   train_set$gender,　 # 目的変数　　  
+                   method = "ranger",　　 # 高速なランダムフォレストパッケージの指定
+                   tuneGrid = train_grid_rf,    # パラメータ探索の設定
+                   trControl = tr,              # クロスバリデーションの設定
+                   preProc = c("center", "scale"), # 標準化
+                   metric = "ROC",                 # 最適化する対象
+                   importance = "impurity_corrected") # 変数重要度の計算法　　　 
+rf_fit_class
+```
+
+```{r}
+pred_test_rf <- predict(rf_fit_class, test_set[, -1])
+rocRes_rf <- roc(test_set$gender, as.numeric(pred_test_rf))
+rocRes_rf$auc
+rocRes_rf$sensitivities
+rocRes_rf$specificities
+```
+
+```{r}
+p3 <- ggroc(list(lasso = rocRes_lasso, rf = rocRes_rf), 
+                 linetype=2)
+plot(p3)
+```
+
+```{r}
+varImp(rf_fit_class)
+```
+
+```{r}
+set.seed(71) # 乱数の固定
+vipRes <- importance_pvalues(rf_fit_class$finalModel, method = "janitza")
+head(vipRes, 10)
+```
+
+```{r}
+library(ropls)
+data(sacurine)
+working_df <- data.frame(sacurine$sampleMetadata, sacurine$dataMatrix)
+working_df <- na.omit(working_df)
+
+library(caret)
+set.seed(71)
+trainIndex <- createDataPartition(working_df$gender, # 目的変数指定
+                                  p = 0.7,           # 分割の割合
+                                  list = FALSE)
+
+train_set <- working_df[trainIndex,]
+test_set  <- working_df[-trainIndex,]
+```
+
+```{r}
+train_dummy <- dummyVars(~., data=train_set)
+test_dummy <- dummyVars(~., data=test_set)
+```
+
+```{r}
+train_set_dummy <- data.frame(predict(train_dummy, train_set))
+test_set_dummy <- data.frame(predict(test_dummy, test_set))
+```
+
+```{r}
+train_x <- data.matrix(train_set_dummy[, 5:113])
+train_y <- data.matrix(train_set_dummy[, 3])
+
+test_x <- data.matrix(test_set_dummy[, 5:113])
+test_y <- data.matrix(test_set_dummy[, 3])
+```
+
+```{r}
+install.packages("xgboost", dependencies = TRUE)
+```
+
+```{r}
+library(xgboost)
+train <- xgb.DMatrix(train_x, label = train_y)
+```
+
+```{r}
+install.packages("rBayesianOptimization")
+```
+
+```{r}
+library(rBayesianOptimization)
+cv_folds <- KFold(train_y, 
+                  nfolds = 5,
+                  stratified = TRUE, 
+                  seed = 71)
+```
+
+```{r}
+xgb_cv_bayesopt <- function(max_depth, min_child_weight, subsample, lambda, alpha) {
+  cv <- xgb.cv(params = list(booster = "gbtree", 
+                             eta = 0.2,
+                             max_depth = max_depth,
+                             min_child_weight = min_child_weight,
+                             subsample = subsample, 
+                             lambda = lambda, 
+                             alpha = alpha,
+                             colsample_bytree = 0.7,
+                             objective = "binary:logistic",
+                             eval_metric = "auc"),
+               data = train, 
+               folds = cv_folds, 
+               nround = 1000,
+               early_stopping_rounds = 20, 
+               maximize = TRUE, 
+               verbose = 0)
+  list(Score = cv$evaluation_log$test_auc_mean[cv$best_iteration],
+       Pred = cv$pred)
+}
+```
+
+```{r}
+set.seed(71) # 実行に10～30分程度
+Opt_res <- BayesianOptimization(xgb_cv_bayesopt,
+                                bounds = list(max_depth = c(3L, 7L),
+                                              min_child_weight = c(1L, 10L),
+                                              subsample = c(0.7, 1.0),
+                                              lambda = c(0.5, 1), 
+                                              alpha = c(0.0, 0.5)), 
+                                init_points = 20, 
+                                n_iter = 30,
+                                acq = "ucb", 
+                                kappa = 5, 
+                                verbose = FALSE)
+```
+
+```{r}
+params <- list(
+  "objective"           = "binary:logistic",
+  "eval_metric"         = "auc",
+  "eta"                 = 0.2,
+  "max_depth"           = 7,
+  "min_child_weight"    = 2,
+  "subsample"           = 0.7,
+  "alpha"               = 0.5,
+  "lambda"              = 0.5
+)
+```
+
+```{r}
+set.seed(71)
+
+cv_nround = 1000
+cv_test <- xgb.cv(params = params, data = train, nfold = 5, nrounds = cv_nround, 
+                 early_stopping_rounds = 20, maximize = TRUE, verbose = FALSE)
+
+cv_nround <- cv_test$best_iteration
+```
+
+```{r}
+model <- xgboost(data = train, 
+                 params = params, 
+                 nrounds = cv_nround, 
+                 verbose = FALSE)
+
+pred <- predict(model, test_x)
+```
+
+```{r}
+for(i in 1:length(pred)){
+  if(pred[i]<0.5) {pred[i]="0"}
+  else if(pred[i]>0.5) {pred[i]="1"}
+}
+```
+
+```{r}
+rocRes_xgb <- roc(pred, as.numeric(test_y)) # ROC, AUCの算出
+rocRes_xgb$auc  # AUCの表示
+rocRes_xgb$sensitivities # 感度の表示
+rocRes_xgb$specificities # 特異度の表示
+```
+
+```{r}
+p4 <- ggroc(list(lasso = rocRes_lasso, rf = rocRes_rf, xgb = rocRes_xgb), 
+                 linetype = 2)
+plot(p4)
+```
+
+```{r}
+importance <- xgb.importance(colnames(test_x), model = model)
+xgb.ggplot.importance(importance)
+```
+
+```{r}
+data(sacurine)
+set.seed(71)
+opls_res <- opls(sacurine$dataMatrix, # データの指定（Matrix形式である必要がある）
+                 sacurine$sampleMetadata[, "gender"], # 目的変数指定
+                 predI = 1,   # 使う主成分の数
+                 orthoI = NA, # NAでOPLS-DAを実行, 0にするとPLS-DAになる
+                 permI = 500, # permutation回数の指定
+                 crossvalI = 7, # クロスバリデーションfold (デフォルト = 7)
+                 scaleC = "standard", # 標準化の方法 (デフォルト:平均0, 分散1にスケーリング)
+                 printL = FALSE, # 結果の表示
+                 plotL = FALSE)  # 図表の表示
+opls_res
+```
+
+```{r}
+tail(sort(opls_res@vipVn), 15)
+```
+
+```{r}
+df_VIP <- data.frame(t(sacurine$dataMatrix), opls_res@vipVn) # vipVnの値を元データに結合
+df_VIP_1.5 <- as.data.frame(t(subset(df_VIP, opls_res.vipVn > 1.5))) # vipVn > 1.5のみ抽出
+df_VIP_1.5 <- df_VIP_1.5[-184, ] # vipVnの行を削除
+
+str(df_VIP_1.5)
+```
+
+```{r}
+df_VIP_1.5 <- cbind(df_VIP_1.5, sacurine$sampleMetadata[, "gender"]) 
+names(df_VIP_1.5)[15]<- "gender" # 結合時に変わってしまった名前を変更
+```
+
+```{r}
+library(GGally)
+library(ggplot2)
+p <- ggpairs(data = df_VIP_1.5, # データを指定
+        mapping = aes(color = gender), # 男女を分けて表示
+        upper = list(continuous = wrap(ggally_cor, size = 2))) # 相関の文字サイズ変更
+p + theme_grey(base_size = 3) # ラベルの文字サイズ変更
+```
+
+```{r}
+df_VIP_1.5[, 1:14] <- scale(df_VIP_1.5[, 1:14], center = TRUE, scale = TRUE) 
+
+Heat  <- Heatmap(df_VIP_1.5[,1:14], # データの指定
+                 row_names_gp = gpar(fontsize = 6), # x軸のフォントサイズ
+                 row_names_max_width = unit(15, "cm"), # x軸の高さ
+                 column_names_gp = gpar(fontsize = 4), # y軸のフォントサイズ
+                 column_names_max_height = unit(7, "cm"), # y軸の高さ
+                 split = df_VIP_1.5$gender # 分割する対象を指定
+                )
+Heat
+```
+
+```{r}
+install.packages("gridExtra")
+```
+
+```{r}
+library(gridExtra)
+# Testosterone.glucuronide
+p1 <- ggplot(
+  working_df,
+  aes (
+    x = gender,
+    y = Testosterone.glucuronide
+  )
+)
+p1 <- p1 + theme_classic() + theme(
+  axis.line.x = element_line(colour = 'black', size=0.5, linetype='solid'),
+  axis.line.y = element_line(colour = 'black', size=0.5, linetype='solid'))
+p1 <- p1 + geom_boxplot(aes(colour = gender))
+
+# p.Anisic.acid
+p2 <- ggplot(
+  working_df,
+  aes (
+    x = gender,
+    y = p.Anisic.acid
+  )
+)
+p2 <- p2 + theme_classic()+ theme(
+  axis.line.x = element_line(colour = 'black', size=0.5, linetype='solid'),
+  axis.line.y = element_line(colour = 'black', size=0.5, linetype='solid'))
+p2 <- p2 + geom_boxplot(aes(colour = gender))
+
+grid.arrange(p1, p2, ncol = 2)
+```
+
+```{r}
+install.packages("qgraph")
+```
+
+```{r}
+library(qgraph)
+df_M <- subset(df_VIP_1.5, gender == "M")
+df_F <- subset(df_VIP_1.5, gender == "F")
+cor_df_M <- cor_auto(df_M[1:14]) # 相関行列の作成 (男性)
+cor_df_F <- cor_auto(df_F[1:14]) # 相関行列の作成 (女性)
+```
+
+```{r}
+L <- averageLayout(cor_df_M, cor_df_F) # 2つのグラフを並べて書く
+
+set.seed(71)
+qgraph(cor_df_M, layout = L, title = "Correlation network Male", 
+       maximum = 1, minimum = 0)
+qgraph(cor_df_F, layout = L, title = "Correlation network Female", 
+       maximum = 1, minimum = 0)
+```
+
+```{r}
+cor_df_M_FDR <- FDRnetwork(cor_df_M, cutoff = 0.2, method = "qval") # FDRによる多重検定の補正 (男性) 
+cor_df_F_FDR <- FDRnetwork(cor_df_F, cutoff = 0.2, method = "qval") # FDRによる多重検定の補正 (女性)
+
+L <- averageLayout(cor_df_M_FDR, cor_df_F_FDR) # 2つのグラフを並べて書く
+
+layout(t(1:2)) # 2つのグラフを横に並べて書く
+
+set.seed(71)
+qgraph(cor_df_M_FDR, layout = L, title = "FDR correlation network Male",
+       maximum = 1, minimum = 0)
+qgraph(cor_df_F_FDR, layout = L, title = "FDR correlation network Female",
+       maximum = 1, minimum = 0)
+```
+
+```{r}
+df_En <- data.frame(sacurine$variableMetadata$hmdb, opls_res@vipVn)
+head(df_En)
+```
+
+```{r}
+subset(df_En, df_En$opls_res.vipVn > 1.5)
+```

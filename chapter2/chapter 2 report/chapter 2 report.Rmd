@@ -1,0 +1,178 @@
+---
+title: chapter 2 report
+bibliography: mybibfile.bib
+output:
+ html_document: # htmlでレポートを出力
+  toc: true     # 目次を作る (#で章、##で節、###項、####目など)
+  number_section: true # セクション番号を振る
+---
+
+```{r warning=FALSE, message=FALSE, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE)
+```
+
+# はじめに
+ここでは年齢、性別、身長、体重、Food_Aの摂取量(g)をまとめたデータ`data2.csv`について、これらの変数のいずれか、あるいはすべてがbody mass index (BMI) の値に関係しているとする仮説を検証する。
+
+# 方法
+本研究ではアンケート調査により得られた参加者情報 (n = 80) を元に、Food_Aの摂取量とBMIの関係について解析を試みた。すべてのデータはR version 3.4.3により解析した (@Rcitation2017)。
+アンケート調査内容は、参加者年齢・性別・身長(cm)・体重(kg)・Food_Aの摂取量(A)である。データはR version 3.4.3により解析した (@Rcitation2017)。男女間の比較には**`lawstat`**パッケージ (@JSSv028i03) の、Brunner-Munzel検定 (@brunner2000nonparametric) を用いた。相関解析にはSpearman's correlationを利用し、Food_Aの摂取量と年齢およびBMIとの関係を解析した。また、重回帰分析により、BMIとFood_Aの摂取量、年齢、性別との関係を解析した。いずれの解析においても有意水準はp = 0.05とした。作図には**`ggplot2`**パッケージ (@ggplot2_book) を用いた。
+
+```{r, include=FALSE}
+# 使用するパッケージの呼び出し
+library(readr); library(ggplot2); library(lawstat); library(sessioninfo)
+
+pre_work <- read_csv("~/GitHub/ScienceR/chapter2/Data/data_2.csv")
+
+# 元データを保存
+data2_work <- pre_work 
+
+# 現在の並び順を入れ替えて元の位置に代入する
+data2_work[c(62, 79), ] <- data2_work[c(62, 79), c(1,2,3,5,4,6,7)]   
+
+data2_work[c(62, 79), ]
+
+data2_work[c(62, 79), ]$BMI <-
+round(data2_work[c(62, 79),]$Weight /(data2_work[c(62, 79), ]$Height/100)^2,
+            digits = 1)
+data2_work[c(62, 79), ]$BMI
+data2_work$Gender <- 
+  factor(data2_work$Gender, # factorに変更
+  levels = c("Male", "Female"))  # Maleを1, Femaleを2に指定
+```
+
+## 参加者属性
+```{r, echo=FALSE}
+summary(data2_work$Gender)
+```
+
+参加者80人の性別を確認したところ、男性35人、女性45人の集団だった。
+
+```{r}
+Male_df <- subset(data2_work, Gender == "Male")
+Female_df <- subset(data2_work, Gender == "Female")
+```
+
+```{r}
+summary(Male_df)
+```
+
+`summary()`により参加者属性をまとめたところ、男性参加者の年齢は`r summary(Male_df)[1, 2]`-`r summary(Male_df)[6, 2]`歳、`r summary(Male_df)[4, 2]`歳だった。身長は`r summary(Male_df)[1, 4]`-`r summary(Male_df)[6, 4]`cm、`r summary(Male_df)[4, 4]`cm、体重は`r summary(Male_df)[1, 5]`-`r summary(Male_df)[6, 5]`kg、`r summary(Male_df)[4, 5]`kgであり、ボディ・マス・インデックス (BMI) 値の範囲は`r summary(Male_df)[1, 6]`-`r summary(Male_df)[6, 6]`、`r summary(Male_df)[4, 6]`であった。Food_Aの摂取量は`r summary(Male_df)[1, 7]`-`r summary(Male_df)[6, 7]`gであり、`r summary(Male_df)[4, 7]`gの集団だった。
+
+```{r}
+summary(Female_df)
+```
+
+女性参加者の年齢は`r summary(Female_df)[1, 2]`-`r summary(Female_df)[6, 2]`歳、`r summary(Female_df)[4, 2]`歳だった。身長は`r summary(Female_df)[1, 4]`-`r summary(Female_df)[6, 4]`cm、平均`r summary(Female_df)[4, 4]`cm、体重は`r summary(Female_df)[1, 5]`-`r summary(Female_df)[6, 5]`kg、`r summary(Female_df)[4, 5]`kgであり、ボディ・マス・インデックス (BMI) 値の範囲は`r summary(Female_df)[1, 6]`-`r summary(Female_df)[6, 6]`、`r summary(Female_df)[4, 6]`であった。Food_Aの摂取量は`r summary(Female_df)[1, 7]`-`r summary(Female_df)[6, 7]`gであり、`r summary(Female_df)[4, 7]`gの集団だった。
+
+# 結果
+## 男女差比較
+まずBrunner-Munzel検定によりFood_A摂取量・年齢・BMIについて男女差を比較した (@brunner2000nonparametric)。
+```{r, fig.height=4, fig.width=4}
+p <- ggplot(data2_work, aes(x = Gender, y = BMI)) + 
+     geom_boxplot()
+plot(p)
+```
+
+```{r}
+brunner.munzel.test(Male_df$Food_A, Female_df$Food_A)
+```
+
+```{r, fig.height=4, fig.width=4}
+p <- ggplot(data2_work,  aes(x = Gender, y = Age)) + 
+     geom_boxplot()        
+plot(p)
+```
+
+```{r}
+brunner.munzel.test(Male_df$Age, Female_df$Age)
+```
+
+```{r, fig.height=4, fig.width=4}
+p <- ggplot(data2_work, aes(x = Gender, y = BMI)) +
+      geom_boxplot()
+plot(p)
+```
+
+```{r}
+brunner.munzel.test(Male_df$BMI, Female_df$BMI)
+```
+
+解析の結果 、Food_A摂取量にのみ有意な差が認められた (p-value = `r brunner.munzel.test(Male_df$Food_A, Female_df$Food_A)$p.value`, 95% confidence interval: `r brunner.munzel.test(Male_df$Food_A, Female_df$Food_A)$conf.int[1]`-`r brunner.munzel.test(Male_df$Food_A, Female_df$Food_A)$conf.int[2]`)。
+
+## 相関解析
+Spearman's correlationによりFood_A摂取量と年齢との関係を解析した。
+```{r, echo=FALSE}
+library("ggplot2")
+p1 <- ggplot(data2_work,  # データフレームを指定
+     aes(Age, Food_A)) +  # 解析対象の列を指定
+     geom_point(aes(color = Gender))  # 散布図なのでpointで作図することを指定
+
+plot(p1)
+```
+
+```{r}
+cor.test(data2_work$Age,    # xを指定
+         data2_work$Food_A, # yを指定
+         method="spearman") # Spearman's correlationを指定
+```
+相関解析の結果、年齢とFood_A消費量の間には有意な正の相関関係が認められた (p = `r cor.test(data2_work$Age, data2_work$Food_A, method="spearman")$p.value`)。
+
+```{r}
+cor.test(Male_df$Age,       # xを指定
+         Male_df$Food_A,    # yを指定
+         method="spearman") # Spearman's correlationを指定
+```
+
+```{r}
+cor.test(Female_df$Age,     # xを指定
+         Female_df$Food_A,  # yを指定
+         method="spearman") # Spearman's correlationを指定
+```
+一方男女別に解析したところ、いずれも有意な関係は認められなかった (男性: p = `r cor.test(Male_df$Age, Male_df$Food_A, method="spearman")$p.value`, 女性: `r cor.test(Female_df$Age, Female_df$Food_A, method="spearman")$p.value`)。
+
+
+続いてFood_A摂取量とBMIとの関係を解析した。
+```{r, echo=FALSE}
+library("ggplot2")
+p2 <- ggplot(data2_work,  # データフレームを指定
+     aes(BMI, Food_A)) +  # 解析対象の列を指定
+     geom_point(aes(color = Gender))  # 散布図なのでpointで作図することを指定
+
+plot(p2)
+```
+
+```{r}
+cor.test(data2_work$BMI,    # xを指定
+         data2_work$Food_A, # yを指定
+         method="spearman") # Spearman's correlationを指定
+```
+
+```{r}
+cor.test(Male_df$BMI,       # xを指定
+         Male_df$Food_A,    # yを指定
+         method="spearman") # Spearman's correlationを指定
+```
+
+```{r}
+cor.test(Female_df$BMI,     # xを指定
+         Female_df$Food_A,  # yを指定
+         method="spearman") # Spearman's correlationを指定
+```
+BMIとFood_A消費量の間には有意な正の相関解析が認められた (p = `r sprintf('%.4f', cor.test(data2_work$BMI, data2_work$Food_A, method="spearman")$p.value)`) が、男女別に解析した場合には男性では有意ではなく、女性で有意という結果であり結果は一貫していなかった (男性: p = `r cor.test(Male_df$BMI, Male_df$Food_A, method="spearman")$p.value`, 女性: `r cor.test(Female_df$BMI, Female_df$Food_A, method="spearman")$p.value`)。
+
+## モデリング
+```{r}
+#重回帰モデル
+lm_res <- lm(BMI ~ Food_A + Age + Gender, data = data2_work)
+summary(lm_res)
+```
+
+最後に重回帰分析により、BMIとFood_A摂取量、年齢、性別との関係を解析した。ここではいずれの変数との間にも有意な関係は認められなかった。しかしながら、男女別に分けて相関解析した場合には有意であった成分もあるため、次章で紹介する階層ベイズモデルのようなアプローチも必要になるかもしれない。
+
+# 実行環境
+```{r}
+session_info()
+```
+
+# References {#references .unnumbered}

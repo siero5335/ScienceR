@@ -1,0 +1,370 @@
+# 4章code
+
+```{r}
+set.seed(71) # 乱数の種を固定
+column <- rep(c("A", "B", "C"), each = 7) # 生成カラムABCを7つずつ作成
+res <- sample(column, length(column)) # 順番をランダムに並べ替える
+res # 出力
+```
+
+```{r}
+library(readr) 
+testCol <- read_csv("~/GitHub/ScienceR/chapter4/Data/data_4_1.csv") 
+testCol
+```
+
+```{r}
+library(tidyr) # データを持ち替えるためのパッケージの呼び出し
+library(ggplot2) # 作図用パッケージ呼び出し
+
+testCol2 <- gather(testCol, key = variable, value = value) 
+
+head(testCol2, 9) # データの前から9行を表示
+```
+
+```{r}
+p <- ggplot(
+  testCol2,    # データの指定                      
+  aes (                         
+    x = variable,    # x軸の指定           
+    y = value        # y軸の指定          
+  )
+)
+p <- p + geom_boxplot()   # 箱ひげ図を指定     
+p <- p + xlab("Column")   # x軸のラベル 
+p <- p + ylab("Recovery rate (%)") # y軸のラベル 
+plot(p)
+```
+
+```{r}
+install.packages("agricolae") # TukeyHSD実行用パッケージ
+```
+
+```{r}
+library(agricolae) # TukeyHSD実行用パッケージの呼び出し
+AnovaCol <- aov(value ~ variable, data = testCol2) # ANOVAを実行
+summary(AnovaCol)
+```
+
+```{r}
+pf(q = 16.3, df1 = 2, df2 = 18, lower.tail = F)
+```
+
+```{r}
+posthocCol <- TukeyHSD(AnovaCol, "variable") # TukeyHSDによる多重検定
+posthocCol
+```
+
+```{r}
+install.packages("ggfortify")
+```
+
+```{r}
+library(ggfortify)
+autoplot(AnovaCol, # 結果モデルの指定
+         colour = 'variable', # 色分けに使う変数
+         label.size = 3,     # ラベルの大きさ指定
+         shape = 'variable') # プロットの形分けに使う変数
+```
+
+```{r}
+library(DoE.base)
+testMS <- fac.design(nlevels = 3, # 水準の数
+                     nfactors = 2, # 因子の数
+                     factor.names = c("Temp" , "Energy"), # 各因子の名前
+                     replications = 3, # 繰り返し回数
+                     randomize = TRUE, # 順番を順不同にする
+                     seed = 71 # 再現性確保のためのシード固定
+                     )
+
+testMS
+```
+
+```{r}
+res_SN <- read_csv("~/GitHub/ScienceR/chapter4/Data/data_4_2_1.csv") 
+testMS$SNratio <- res_SN$SNratio
+```
+
+```{r}
+testMS$Temp <- factor(testMS$Temp)
+testMS$Energy <- factor(testMS$Energy)
+```
+
+```{r}
+head(testMS)
+```
+
+```{r}
+library(tidyr) # データを持ち替えるためのパッケージの呼び出し
+library(ggplot2) # 作図用パッケージの呼び出し
+testMS2 <- gather(testMS, key = variable, value = value, -c(SNratio, Blocks, Energy))
+head(testMS2, 9) # データの前から9行を表示
+```
+
+```{r}
+p <- ggplot(
+  testMS2,      # データの指定            
+  aes (                         
+    x = value,  # x軸の指定
+    y = SNratio # y軸の指定                
+  )
+)
+p <- p + geom_boxplot()    # 箱ひげ図を指定
+p <- p + xlab("Temp")      # x軸のラベル     
+p <- p + ylab("S/N ratio") # y軸のラベル
+plot(p)
+```
+
+```{r}
+testMS3 <- gather(testMS, key = variable, value = value, -c(SNratio, Blocks, Temp)) 
+head(testMS3, 9) # データの前から9行を表示
+```
+
+```{r}
+p <- ggplot(
+  testMS3,             #データの指定             
+  aes (                        
+    x = value,         #x軸の指定      
+    y = SNratio        #y軸の指定          
+  )
+)
+
+p <- p + geom_boxplot()       #箱ひげ図を指定
+p <- p + xlab("Energy")       #x軸のラベル 
+p <- p + ylab("S/N ratio")    #y軸のラベル
+plot(p)
+```
+
+```{r}
+AnovaMS <- aov(SNratio ~ Temp + Energy, data = testMS)
+summary(AnovaMS)
+```
+
+```{r}
+# 温度について
+posthocMS <- TukeyHSD(AnovaMS, "Temp") # TukeyHSDによる多重検定
+posthocMS
+```
+
+```{r}
+# 電圧について
+posthocMS2 <- TukeyHSD(AnovaMS, "Energy") # TukeyHSDによる多重検定
+posthocMS2
+```
+
+```{r}
+autoplot(AnovaMS)
+```
+
+```{r}
+AnovaMS2 <- aov(SNratio ~ Temp * Energy, data = testMS)
+summary(AnovaMS2)
+```
+
+```{r}
+posthocMS_int <- TukeyHSD(AnovaMS2, "Temp:Energy") # TukeyHSDによる多重検定
+```
+
+```{r}
+posthocMS_int
+```
+
+```{r}
+library(multcompView)
+plot(posthocMS_int, las = 1)
+```
+
+```{r}
+autoplot(AnovaMS2)
+```
+
+```{r}
+library(DoE.base)
+testGC_fa <- fac.design(nlevels = c(3, 3, 3), # 水準の数
+                      nfactors = 3, # 因子の数
+                      factor.names = c("InjectorTemp", "InjectorPress", "Volume"), # 各因子の名前
+                      replications = 3, # 繰り返し回数
+                      randomize = TRUE, # 順番を順不同にする
+                      seed = 71 # 再現性確保のための乱数固定
+                      )
+
+nrow(testGC_fa)
+```
+
+```{r}
+testGC_oa <- oa.design(nlevels = c(3, 3, 3), # 水準の数
+                      nfactors = 3, # 因子の数
+                      factor.names = c("InjectorTemp", "InjectorPress", "Volume"), # 各因子の名前
+                      replications = 3, # 繰り返し回数
+                      randomize = TRUE, # 順番を順不同にする
+                      seed = 71 # 再現性確保のための乱数固定
+                      )
+
+nrow(testGC_oa)
+```
+
+```{r}
+res_SN_oa <- read_csv("~/GitHub/ScienceR/chapter4/Data/data_4_2_2.csv") 
+testGC_oa$SNratio <- res_SN_oa$SNratio
+```
+
+```{r}
+testGC_oa$InjectorTemp <- factor(testGC_oa$InjectorTemp)
+testGC_oa$InjectorPress <- factor(testGC_oa$InjectorPress)
+testGC_oa$Column <- factor(testGC_oa$Volume)
+```
+
+```{r}
+testGC_oa2 <- gather(testGC_oa, key = variable, value = value, -SNratio, -InjectorPress, -Volume) 
+```
+
+```{r}
+p <- ggplot(
+  testGC_oa2,             # データの指定             
+  aes (                        
+    x = value,         # x軸の指定      
+    y = SNratio        # y軸の指定          
+  )
+)
+
+p <- p + geom_boxplot()          # x箱ひげ図を指定
+p <- p + xlab("InjectorTemp")    # x軸のラベル指定     
+p <- p + ylab("S/N ratio")       # y軸のラベル指定
+plot(p)
+```
+
+```{r}
+AnovaGC <- aov(SNratio ~ InjectorTemp + InjectorPress + Volume, data = testGC_oa)
+summary(AnovaGC)
+```
+
+```{r}
+posthocGC_1 <- TukeyHSD(AnovaGC, "InjectorTemp") # TukeyHSDによる多重検定
+posthocGC_2 <- TukeyHSD(AnovaGC, "InjectorPress") # TukeyHSDによる多重検定
+posthocGC_3 <- TukeyHSD(AnovaGC, "Volume") # TukeyHSDによる多重検定
+
+posthocGC_1
+posthocGC_2
+posthocGC_3
+```
+
+```{r}
+autoplot(AnovaGC)
+```
+
+```{r}
+AnovaGC_int1 <- aov(SNratio ~ InjectorTemp * InjectorPress + Volume, data = testGC_oa)
+summary(AnovaGC_int1)
+```
+
+```{r}
+posthocGC_4 <- TukeyHSD(AnovaGC_int1, "InjectorTemp:InjectorPress") # TukeyHSDによる多重検定
+posthocGC_4
+```
+
+```{r}
+plot(posthocGC_4, las=1)
+```
+
+```{r}
+library(readr)
+Cal_curve <- read_csv("~/GitHub/ScienceR/chapter4/Data/data_4_5_1.csv")
+head(Cal_curve)
+```
+
+```{r}
+library(tidyr) # データを持ち替えるためのパッケージの呼び出し
+library(ggplot2) # 作図用パッケージの呼び出し
+
+Cal_curve2 <- gather(Cal_curve, key = variable, value = value, -Conc) # -Concを記入し、列としてConcを残す
+head(Cal_curve2, 9) # データの前から9行を表示
+```
+
+```{r}
+summary(lm(value ~ Conc, data = Cal_curve2))
+```
+
+```{r}
+p <- ggplot(
+  Cal_curve2,          # 上記で作ったデータ名を入れる
+  aes (
+    x = Conc,          # x軸にConcを指定
+    y = value          # y軸に実測値(Value)を指定
+  ) 
+)
+
+p <- p + geom_point()  # 点の作図
+
+p <- p + stat_smooth(  # 近似直線を追加するための関数
+  method = "lm",       # 上記で求めた線形回帰の結果を当てはめる
+  se = FALSE,          # 信頼区間をつけるかどうか
+  colour = "black",    # 線の色
+  size = 1)            # 線の太さ
+
+p <- p + xlab("Analyzed value (ng)")    # x軸ラベル
+p <- p + ylab("Amounts of compound (ng)")    # y軸ラベル
+p <- p + ggtitle("Calibration curve (R^2 = 0.9995)") # グラフタイトル、R^2の値もあわせて記載
+
+plot(p)
+```
+
+```{r}
+library(readr)
+ILOD <- read_csv("~/GitHub/ScienceR/chapter4/Data/data_4_5_2.csv")
+head(ILOD)
+```
+
+```{r}
+sd(ILOD$Value) * 3.3
+```
+
+```{r}
+QLOD <- read_csv("~/GitHub/ScienceR/chapter4/Data/data_4_5_3.csv")
+head(QLOD)
+```
+
+```{r}
+sd(QLOD$Value) * 3.3
+```
+
+```{r}
+library(readr)
+Comp_reg <- read_csv("~/GitHub/ScienceR/chapter4/Data/data_4_5_4.csv")
+head(Comp_reg)
+```
+
+```{r}
+library(mcr)
+Paba_reg <-  mcreg(Comp_reg$Previous, Comp_reg$New,  
+                   error.ratio = 1, 
+                   alpha = 0.05,  
+                   method.reg = "PaBa", 
+                   method.ci ="bootstrap",
+                   method.bootstrap.ci = "BCa",
+                   nsamples = 999, 
+                   rng.seed = 71,
+                   mref.name = "Previous", 
+                   mtest.name = "New"
+                   )
+Paba_reg@para
+```
+
+```{r}
+plot(Paba_reg)
+```
+
+```{r}
+X_R_test <- read_csv("~/GitHub/ScienceR/chapter4/Data/data_4_5_5.csv")
+head(X_R_test)
+```
+
+```{r}
+library(qcc)
+X_R_val <- qcc.groups(X_R_test$Value, X_R_test$sample)
+X_R_val
+```
+
+```{r}
+qcc_res <- qcc(X_R_val[1:10, ], type = "xbar", plot = FALSE)
+plot(qcc_res)
+```

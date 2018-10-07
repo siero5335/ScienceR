@@ -1,0 +1,129 @@
+---
+title: chapter 5 report
+
+bibliography: mybibfile.bib
+output: 
+  html_document:
+    toc: true
+    number_section: true
+---
+
+```{r warning=FALSE, message=FALSE, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE)
+```
+
+# はじめに
+    本研究の目的は高速液体クロマトグラフ-高分解能質量分析計により得られた低分子代謝物（メタボローム）の組成を機械学習により判別し、男女の違いに関わるマーカーを抽出することである。
+
+```{r, include=FALSE}
+library(ropls); library(ComplexHeatmap); library(dplyr); 
+library(qgraph); library(sessioninfo)
+```
+
+```{r, include=FALSE}
+data(sacurine)
+working_df <- data.frame(sacurine$sampleMetadata, sacurine$dataMatrix)
+```
+
+# 方法
+    本研究では`ropls`パッケージに格納されている尿中メタボロームのデータを利用する (@thevenot2015analysis)。解析には`ComplexHeatmap`パッケージを用いたクラスタ解析 (@gu2016complex) および、`ropls`パッケージを用いた直交部分最小二乗法判別分析 (Orthogonal Projections to Latent Structures Discriminant Analysis: OPLS-DA) を用いた (@bylesjo2006opls)。対象とした検体数は183人であり、109個のメタボロームの解析を試みた。Cross-validationの設定は`ropls`パッケージの初期設定である7-foldとした。Permutation testにおける並び替え回数は500回とした。OPLS-DAおよびクラスタリングの際にはすべての変数を平均0、分散1となるようにスケーリングした。これらの処理により抽出されたメタボロームについて、男女別に`qgraph`パッケージを用いたネットワーク解析を試みた (@qgraph2012)。ネットワーク関係の解析にはPearsonの相関係数を使用し、False discovery rate > 0.2を閾値として解析を試みた (@benjamini1995controlling)。
+
+
+# データの可視化
+```{r, fig.height=12, fig.width=10}
+claster_working_df <- scale(working_df[, 4:112], #データの標準化
+                            center = TRUE, 
+                            scale = TRUE) 
+
+Heatmap(claster_working_df, # 標準化したデータの指定
+        row_names_gp = gpar(fontsize = 4), # x軸のフォントサイズ
+        row_names_max_width = unit(7, "cm"),　# x軸の高さ
+        column_names_gp = gpar(fontsize = 6), # y軸のフォントサイズ
+        column_names_max_height = unit(15, "cm"), # y軸の高さ
+        row_title = "ID",                         # y軸の名前
+        column_title = "Metabolome",　　　　　　  # x軸の名前
+        split = working_df$gender                 # 男女の分割
+        )
+```
+
+
+ 類似の傾向をもつメタボロームがクラスタリングされている。一方、男女の明確なパターンの違いを明らかにすることはできなかった。
+    
+# OPLS-DA
+続いてOPLS-DAによる解析を試みた。
+```{r, include=FALSE}
+set.seed(71)
+opls_res <- opls(sacurine$dataMatrix, # データの指定(Matrix形式である必要がある)
+                 sacurine$sampleMetadata[, "gender"], # 目的変数の指定
+                 predI = 1,   # 使う主成分の数
+                 orthoI = NA, # NAでOPLS-DA実行, 0にするとPLS-DAになる
+                 permI = 500, # permutation回数の指定
+                 crossvalI = 7, # クロスバリデーションfold (デフォルト = 7)
+                 scaleC = "standard", # 標準化の方法（デフォルト：平均0, 分散1にスケーリング）
+                 printL = FALSE, # 結果の表示
+                 plotL = FALSE)  # 図表の表示
+```
+
+```{r, include=FALSE}
+opls_res
+```
+
+```{r, fig.height=6, fig.width=6}
+layout(matrix(1:4, nrow = 2, byrow = TRUE)) # 表示する因子数および行の数
+for(typeC in c("x-score", "overview", "permutation", "outlier")) # 表示する因子
+  
+plot(opls_res, 
+     typeVc = typeC,     # 上記コードで指定した因子の読み込み
+     parDevNewL = FALSE  # 新規ウインドウで開かないように設定
+)
+```
+
+解析の結果、男女の2群が良好に判別されていることが図示されている。詳細を見ると、R2X = `r opls_res@summaryDF$'R2X(cum)'`、R2Y = `r opls_res@summaryDF$'R2Y(cum)'`、Q2 = `r opls_res@summaryDF$'Q2(cum)'`であり、良好な予測性能を得た。また、Permutationテストにより算出されたR2Y、Q2のp値はそれぞれ`r opls_res@summaryDF$pR2Y`、`r opls_res@summaryDF$pQ2`であり、過剰適合が抑えられていることが示唆された。また、スコアプロット、Observation diagnonsticsの図から、95%信頼区間から外れた検体が存在することが示唆された。
+
+# 変数重要度
+    続いて、モデル内で変数重要度 (VIP) が1.5以上であった因子を抽出する。
+```{r}
+subset(opls_res@vipVn, opls_res@vipVn > 1.5, opls_res@vipVn)
+```
+
+VIP1.5以上の因子について検討したところ、上記14種のメタボロームが抽出された。
+
+# 変数間のネットワークの可視化
+最後にVIPが高い14種のメタボロームについて、男女別にネットワーク関係を解析した。
+```{r, include=FALSE}
+df_VIP <- data.frame(t(sacurine$dataMatrix), opls_res@vipVn) # vipVnの値を元データに結合
+df_VIP_1.5 <- as.data.frame(t(subset(df_VIP, opls_res.vipVn > 1.5))) # vipVn > 1.5のみ抽出
+df_VIP_1.5 <- df_VIP_1.5[-184, ] # vipVnの行を削除
+df_VIP_1.5 <- cbind(df_VIP_1.5, sacurine$sampleMetadata[, "gender"]) 
+names(df_VIP_1.5)[15]<- "gender" # 結合時に変わってしまった名前を変更
+```
+
+```{r, include=FALSE}
+df_M <- subset(df_VIP_1.5, gender == "M")
+df_F <- subset(df_VIP_1.5, gender == "F")
+cor_df_M <- cor_auto(df_M[1:14]) # 相関行列の作成 (男性)
+cor_df_F <- cor_auto(df_F[1:14]) # 相関行列の作成（女性）
+```
+
+```{r, echo=FALSE, fig.height=5, fig.width=10}
+cor_df_M_FDR <- FDRnetwork(cor_df_M, cutoff = 0.2, method = "qval") # FDRによる多重検定の補正 (男性)
+cor_df_F_FDR <- FDRnetwork(cor_df_F, cutoff = 0.2, method = "qval") # FDRによる多重検定の補正（女性）
+
+L <- averageLayout(cor_df_M_FDR, cor_df_F_FDR) # 2つのグラフを並べて書く
+
+layout(t(1:2)) # 2つのグラフを横に並べて書く
+
+set.seed(71)
+qgraph(cor_df_M_FDR, layout = L, title = "FDR correlation network Male",
+       maximum = 1, minimum = 0)
+qgraph(cor_df_F_FDR, layout = L, title = "FDR correlation network Female",
+       maximum = 1, minimum = 0)
+```
+
+可視化の結果、FDRでの補正後も男性では一部の成分どうしのネットワーク関係が認められたが、女性ではネットワーク関係は認められなかった。この結果より、VIPの高いメタボローム同士のネットワーク関係については男女差が存在する可能性が示唆された。しかし、ほとんどの成分間でネットワーク関係が認められなかったことから、メタボローム間の関係については慎重に解釈する必要がある。
+
+# 実行環境
+```{r, message=FALSE}
+session_info()
+```
+#References {#references .unnumbered}

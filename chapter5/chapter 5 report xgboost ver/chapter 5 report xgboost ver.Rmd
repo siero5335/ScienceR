@@ -1,0 +1,314 @@
+---
+title: chapter 5 report ver2
+
+bibliography: mybibfile.bib
+output: 
+  html_document:
+    toc: true
+    number_section: true
+---
+
+```{r warning=FALSE, message=FALSE, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE)
+```
+
+#はじめに
+本研究の目的は高速液体クロマトグラフ-高分解能質量分析計により得られた低分子代謝物 (メタボローム) の組成を機械学習により判別し、男女の違いに関わるマーカーを抽出することである。
+```{r, include=FALSE}
+library(ropls); library(ComplexHeatmap); library(dplyr); library(qgraph); library(sessioninfo); library(FactoMineR); library(factoextra); library(caret); library(ggfortify); library(gridExtra);
+library(ranger); library(glmnet); library(pROC); library(ggplot2); library(sessioninfo)
+```
+
+```{r, include=FALSE}
+data(sacurine)
+working_df <- data.frame(sacurine$sampleMetadata, sacurine$dataMatrix)
+working_df <- na.omit(working_df)
+working_df$age <- NULL
+working_df$bmi <- NULL
+```
+
+#方法
+本研究では`ropls`パッケージに格納されている尿中メタボロームのデータを利用する (@thevenot2015analysis)。解析として、まず`FactoMine`パッケージを用いた主成分分析による可視化を行った(@FactoMineR2008)。続いて、caret`パッケージを通じたLasso回帰分析および、`xgboost`パッケージを用いた勾配ブースティングにより男女の違いに関わるマーカーを抽出することである。 (@caret2017, @tibshirani1996regression, @glmnet2010, @chen2016xgboost) 。
+対象とした検体数は`r nrow(sacurine$sampleMetadata)`人であり、`r ncol(sacurine$dataMatrix)`個のメタボロームを対象に解析を試みた。評価指標はAUCとし、トレーニングセットについて5-foldクロスバリデーションによりモデルを構築した。ハイパーパラメータは、lassoについては`caret`パッケージを用いた探索を、勾配ブースティングでは`rBayesianOptimization`パッケージを用いたベイズ最適化により最適化を試みた (@bopt160914)。
+
+#データ可視化
+主成分分析のローディングプロットで男女の分布が比較的離れていた、主成分5, 9を可視化した。主成分5の寄与率は4.1%、9の寄与率は2.6%だった。
+
+```{r, include=FALSE}
+pca_res <- PCA(working_df[, 4:110],  #データ読み込み
+               graph = FALSE,
+               ncp = 10) #結果に保存する主成分の数
+```
+
+```{r, echo=FALSE, fig.height=4, fig.width=5}
+fviz_pca_ind(pca_res, 
+             axes = c(5, 9), #表示したい成分の指定
+             habillage = working_df$gender, #色分けしたいグループの指定
+             geom="point", #点のみの表示
+             pointsize = 3, #点の大きさ指定
+             repel = TRUE, #ラベル表記の重なりをなるべく避ける
+             addEllipses = TRUE #円の表示をするかどうか
+             )
+```
+
+```{r, echo=FALSE, fig.height=6, fig.width=5}
+fviz_contrib(pca_res, #上記で作成・保存したPCAの結果
+             choice = "var", #変数を指定
+             axes = 5,       #寄与率を見たい成分の指定
+             top = 5)        #上位いくつ目の成分まで表示するか
+
+```
+
+```{r, echo=FALSE, fig.height=6, fig.width=5}
+fviz_contrib(pca_res, #上記で作成・保存したPCAの結果
+             choice = "var", #変数を指定
+             axes = 9,       #寄与率を見たい成分の指定
+             top = 5)        #上位いくつ目の成分まで表示するか
+
+```
+
+
+主成分5, 9で寄与率の高かった因子をそれぞれ5種づつ図示した。各主成分の寄与率は低いものの、これらの因子が男女差に関与している可能性が示唆された。
+
+#Lasso, Xgboostにより算出されるArea Under Curve (AUC) の比較
+では機械学習を用いて男女差を明確にするモデルを作成し、判別に寄与する変数の抽出を試みる。
+
+##Lassoパラメータ最適化
+```{r, include=FALSE}
+set.seed(71)
+trainIndex <- createDataPartition(working_df$gender, #目的変数指定
+                                  p = 0.7,           #分割割合
+                                  list = FALSE)
+
+train_set <- working_df[trainIndex,]
+test_set  <- working_df[-trainIndex,]
+```
+
+```{r, include=FALSE}
+nrow(working_df)
+nrow(train_set)
+nrow(test_set)
+```
+
+```{r, include=FALSE}
+set.seed(71)
+tr = trainControl(
+  method = "repeatedcv", # 最適化の方法
+  number = 5,　# 5-fold CV
+  repeats = 5, # 繰り返し回数
+  summaryFunction = twoClassSummary, # 2群分類
+  classProbs = TRUE)  # 確率で結果を出力
+```
+
+```{r, include=FALSE}
+train_grid_lasso = expand.grid(alpha = 1 , lambda = 10 ^ (0:10 * -1)) 
+```
+
+```{r, echo=FALSE}
+set.seed(71) #乱数固定
+lasso_fit_class = train(train_set[, -1],  #説明変数
+                        train_set$gender,　　 #目的変数
+                        method = "glmnet",　　 #lassoが含まれるパッケージの指定
+                        tuneGrid = train_grid_lasso, #パラメータ探索設定
+                        trControl=tr,                #クロスバリデーション設定
+                        preProc = c("center", "scale"), #標準化
+                        metric = "ROC")　　　　　       #最適化する対象
+lasso_fit_class
+```
+
+Lassoのハイパーパラメータ最適化の結果、alpha = `r lasso_fit_class$bestTune[1]`, lambda  = `r lasso_fit_class$bestTune[2]`の際にAUCが最大だった。このため、これらの値により得られたモデルをバリデーションデータへの当てはめおよび変数重要度の算出に使用した。
+
+##Xboostパラメーター最適化
+続いて勾配ブースティングのハイパーパラメータ最適化を試みた。最適化の際、学習率`eta`は0.1、変数全体の何割を使ってモデル を作るかの指標`colsample_bytree`は0.7に固定して探索を試みた。
+```{r, include=FALSE}
+library(ropls)
+data(sacurine)
+working_df <- data.frame(sacurine$sampleMetadata, sacurine$dataMatrix)
+working_df <- na.omit(working_df)
+
+library(caret)
+set.seed(71)
+trainIndex <- createDataPartition(working_df$gender, #目的変数指定
+                                  p = 0.7,           #分割割合
+                                  list = FALSE)
+
+train_set <- working_df[trainIndex,]
+test_set  <- working_df[-trainIndex,]
+```
+
+```{r, include=FALSE}
+train_dummy <- dummyVars(~., data=train_set)
+test_dummy <- dummyVars(~., data=test_set)
+```
+
+```{r, include=FALSE}
+train_set_dummy <- data.frame(predict(train_dummy, train_set))
+test_set_dummy <- data.frame(predict(test_dummy, test_set))
+```
+
+```{r, include=FALSE}
+train_x <- data.matrix(train_set_dummy[, 5:113])
+train_y <- data.matrix(train_set_dummy[, 3])
+
+test_x <- data.matrix(test_set_dummy[, 5:113])
+test_y <- data.matrix(test_set_dummy[, 3])
+```
+
+```{r, include=FALSE}
+library(xgboost)
+train <- xgb.DMatrix(train_x, label = train_y)
+```
+
+```{r, include=FALSE}
+library(rBayesianOptimization)
+cv_folds <- KFold(train_y, 
+                  nfolds = 5,
+                  stratified = TRUE, 
+                  seed = 71)
+```
+
+```{r, include=FALSE}
+xgb_cv_bayesopt <- function(max_depth, min_child_weight, subsample, lambda, alpha) {
+  cv <- xgb.cv(params = list(booster = "gbtree", 
+                             eta = 0.1,
+                             max_depth = max_depth,
+                             min_child_weight = min_child_weight,
+                             subsample = subsample, 
+                             lambda = lambda, 
+                             alpha = alpha,
+                             colsample_bytree = 0.7,
+                             objective = "binary:logistic",
+                             eval_metric = "auc"),
+               data = train, 
+               folds = cv_folds, 
+               nround = 1000,
+               early_stopping_rounds = 20, 
+               maximize = TRUE, 
+               verbose = 0)
+  list(Score = cv$evaluation_log$test_auc_mean[cv$best_iteration],
+       Pred = cv$pred)
+}
+```
+
+```{r, echo=FALSE}
+set.seed(71) #実行に10~30分程度
+Opt_res <- BayesianOptimization(xgb_cv_bayesopt,
+                                bounds = list(max_depth = c(3L, 7L),
+                                              min_child_weight = c(1L, 10L),
+                                              subsample = c(0.7, 1.0),
+                                              lambda = c(0.5, 1), 
+                                              alpha = c(0.0, 0.5)), 
+                                init_points = 20, 
+                                n_iter = 30,
+                                acq = "ucb", 
+                                kappa = 5, 
+                                verbose = FALSE)
+```
+
+勾配ブースティングのハイパーパラメータ最適化の結果、上記の組み合わせにおいてトレーニングセットを用いた5-foldクロスバリデーションにおける平均RMSE値が最小となったため、この値を用いて再度モデルを構築し、バリデーションデータへの当てはめおよび変数重要度の算出に使用した。
+
+```{r, include=FALSE}
+params <- list(
+  "objective"           = "binary:logistic",
+  "eval_metric"         = "auc",
+  "eta"                 = 0.1,
+  "max_depth"           = 3,
+  "min_child_weight"    = 4,
+  "subsample"           = 0.7,
+  "alpha"               = 0.5,
+  "lambda"              = 0.6235
+)
+```
+
+```{r, include=FALSE}
+set.seed(71)
+
+cv_nround = 1000
+cv_test <- xgb.cv(params = params, data = train, nfold = 5, nrounds = cv_nround, 
+                 early_stopping_rounds = 20, maximize = TRUE, verbose = FALSE)
+
+cv_nround <- cv_test$best_iteration
+```
+
+```{r, include=FALSE}
+model <- xgboost(data = train, 
+                 params = params, 
+                 nrounds = cv_nround, 
+                 verbose = FALSE)
+
+pred <- predict(model, test_x)
+```
+
+
+```{r, include=FALSE}
+for(i in 1:length(pred)){
+  if(pred[i]<0.5) {pred[i]="0"}
+  else if(pred[i]>0.5) {pred[i]="1"}
+}
+rocRes_xgb <- roc(pred, as.numeric(test_y)) #ROC, AUC算出
+```
+
+```{r, include=FALSE}
+pred_test_lasso <- predict(lasso_fit_class, test_set[, -1]) #予測値作成
+rocRes_lasso <- roc(test_set$gender, as.numeric(pred_test_lasso))
+```
+
+```{r, echo=FALSE, fig.height=4, fig.width=5}
+p <- ggroc(list(lasso = rocRes_lasso, xgb = rocRes_xgb), 
+                 linetype=2)
+plot(p)
+```
+この時LassoにおけるAUCは`r rocRes_lasso$auc`、感度`r rocRes_lasso$sensitivities`、特異度`r rocRes_lasso$specificities`、勾配ブースティングにおけるAUCは`r rocRes_xgb$auc`、感度`r rocRes_xgb$sensitivities`、特異度`r rocRes_xgb$specificities`であり、本研究におけるこれらの値はいずれもLassoが上回る結果となった。
+
+#変数重要度
+```{r, echo=FALSE, fig.height=5, fig.width=6}
+plot(varImp(lasso_fit_class), 
+     top = 30)
+```
+
+```{r, echo=FALSE}
+importance <- xgb.importance(colnames(test_x), model = model)
+xgb.ggplot.importance(importance)
+```
+
+
+最後それぞれのモデルにおける変数重要度を確認する。いずれのモデルにおいても`Testosterone.glucuronide`、`p.Anisic.acid`が高い変数重要度を示していることが分かる。
+
+```{r, echo=FALSE}
+#Testosterone.glucuronide
+p1 <- ggplot(
+  working_df,
+  aes (
+    x = gender,
+    y = Testosterone.glucuronide
+  )
+)
+p1 <- p1 + theme_classic() + theme(
+  axis.line.x = element_line(colour = 'black', size=0.5, linetype='solid'),
+  axis.line.y = element_line(colour = 'black', size=0.5, linetype='solid'))
+p1 <- p1 + geom_boxplot(aes(colour = gender))
+
+#p.Anisic.acid
+p2 <- ggplot(
+  working_df,
+  aes (
+    x = gender,
+    y = p.Anisic.acid
+  )
+)
+p2 <- p2 + theme_classic()+ theme(
+  axis.line.x = element_line(colour = 'black', size=0.5, linetype='solid'),
+  axis.line.y = element_line(colour = 'black', size=0.5, linetype='solid'))
+p2 <- p2 + geom_boxplot(aes(colour = gender))
+
+grid.arrange(p1, p2, ncol = 2)
+```
+
+これらの因子を男女別に箱ひげ図で可視化したところ、`Testosterone.glucuronide`は男性、`p.Anisic.acid`は女性で高い値を示すことが示唆された。`Testosterone.glucuronide`は尿中に排泄されるテストステロン (男性ホルモン) の代謝物であり (@testosterone2018)、男性で高値を示すことは理にかなっている。`p.Anisic.acid`はアニスシードと呼ばれるスパイスによく含まれるフェノール酸の1種である(@anisic2018。女性で高い値を示した理由は不明だが、食習慣・生活習慣の違いなどを反映している可能性がある。
+#実行環境
+```{r, echo=FALSE}
+session_info()
+```
+#References {#references .unnumbered}
+
+

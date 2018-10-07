@@ -1,0 +1,166 @@
+---
+title: chapter 4 report
+
+bibliography: mybibfile.bib
+output: 
+  html_document:
+    toc: true
+    number_section: true
+---
+
+```{r warning=FALSE, message=FALSE, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE)
+```
+
+#はじめに
+本研究の目的は実験計画法を通じて機器条件を最適化し、最適化された条件を既存手法における測定値と比較・検証することである。
+
+```{r, include=FALSE}
+library(readr); library(tidyr); library(ggplot2); library(DoE.base)
+library(agricolae); library(ggfortify); library(multcompView)
+library(mcr); library(sessioninfo)
+```
+
+#方法
+測定機器における測定条件の最適化のため、機器の検出器の条件を3水準、2因子 (電圧: 50, 70, 90eV, 温度 150, 200, 250℃) の二元配置分散分析 (Two-way ANOVA)を用いて、S/N比 (Signal noise比) の 最適化を試みた。割付表は`DoE.base`パッケージを用いて作成し、交互作用項についても検討を行った(@DoE.base2017)。解析結果は`agricolae`パッケージのTukey honestly significant difference testを用いて多重比較を行い、`multcompView`パッケージを使って可視化した(@multcompView2017)。確立した手法の検量線は0.1, 0.5, 1.0, 5.0, 10, 50, 100 ngの7点とし、それぞれ3回ずつ繰り返し測定を行った。機器の検出下限値は0.1 ngの試料を6回繰り返し測定を行い、Currieの方法を用いて値を算出した (@currie1968limits)。最適化された条件は`mcr`パッケージのpassing-bablok regressionにより先行研究における測定値との比較を行った(@mcr2015)。Passing-bablok regressionのブートストラップサンプリング回数は999回とした。すべてのデータはR version 3.4.3により解析を試みた (@Rcitation2017)。
+```{r, include=FALSE}
+testMS <- fac.design(nlevels = 3, #水準の数
+                     nfactors = 2, #因子の数
+                     factor.names = c("Temp" , "Energy"), #各因子の名前
+                     replications = 3, #繰り返し回数
+                     randomize = TRUE, #順番を順不同にする
+                     seed = 71 #再現性確保のためのシード固定
+                     )
+
+```
+
+```{r, include=FALSE}
+res_SN <- read_csv("~/GitHub/ScienceR/chapter4/Data/data_4_2_1.csv") 
+testMS$SNratio <- res_SN$SNratio
+testMS2 <- gather(testMS, key = variable, value = value, -c(SNratio, Blocks, Energy))
+testMS3 <- gather(testMS, key = variable, value = value, -c(SNratio, Blocks, Temp)) 
+```
+
+#可視化
+```{r, echo=FALSE, fig.height=4, fig.width=5}
+p <- ggplot(
+  testMS2,      #データの指定            
+  aes (                         
+    x = value,  #x軸の指定
+    y = SNratio #y軸の指定                
+  )
+)
+p <- p + geom_boxplot()    #箱ひげ図を指定
+p <- p + xlab("Temp")      #x軸のラベル     
+p <- p + ylab("S/N ratio") #y軸のラベル
+plot(p)
+```
+
+図中のTemp1, 2, 3はそれぞれ温度150, 200, 250℃を表す。検出器温度が上がるにつれ、S/N比が向上することが示唆される。
+
+```{r, echo=FALSE, fig.height=4, fig.width=5}
+p <- ggplot(
+  testMS3,             #データの指定             
+  aes (                        
+    x = value,         #x軸の指定      
+    y = SNratio        #y軸の指定          
+  )
+)
+
+p <- p + geom_boxplot()       #箱ひげ図を指定
+p <- p + xlab("Energy")       #x軸のラベル 
+p <- p + ylab("S/N ratio")    #y軸のラベル
+plot(p)
+```
+
+図中のEnergy1, 2, 3はそれぞれ電圧50, 70, 90eVを表す。検出器電圧についても電圧が高くなるにつれS/N比が高くなる傾向が確認されたが、70eV時の分散が大きく、温度ほどS/N比との関係は明確ではない。このため、検出器温度、検出器電圧の間の相互作用についても考慮し、分散分析を行った。
+
+#分散分析
+```{r}
+AnovaMS2 <- aov(SNratio ~ Temp*Energy, data = testMS)
+summary(AnovaMS2)
+```
+解析の結果、交互作用項である`Temp:Energy`が有意であり、影響が認められることが示唆された。これは、それぞれの因子が個別には最適化されていたとしても、因子を組み合わせて解析すると、個別に最適化した時のそれぞれの値の組み合わせが、必ずしも最適な値を示さない可能性があることを示している。このため、Tukey honestly significant difference testによる検定を行い、各測定条件同士のS/N比を比較した。
+
+```{r}
+posthocMS_int <- TukeyHSD(AnovaMS2, "Temp:Energy") #TukeyHSDによる多重検定
+```
+
+```{r, fig.height=7, fig.width=6}
+plot(posthocMS_int, las=1)
+```
+
+
+縦軸には比較の組み合わせ、横軸には差分の大きさが示されていることが分かる。それぞれの交互作用項を確認してみると、の`Temp3:Energy2`の組み合わせが有意となっており、差分である`diff`も大きくなる傾向ことが分かる。また、ここで得られた`Temp3:Energy2`の値は有意ではないものの`Temp3:Energy3`よりも高値を示した。この結果より、温度250℃, 電圧70eV時の条件が測定対象の分析に適していることが示唆された。
+
+#確立した条件の検証
+##検量線・検出下限値
+```{r, include=FALSE}
+Cal_curve <- read_csv("~/GitHub/ScienceR/chapter4/Data/data_4_5_1.csv")
+head(Cal_curve)
+Cal_curve2 <- gather(Cal_curve, key = variable, value = value, -Conc) 
+```
+
+```{r, echo=FALSE, fig.height=4, fig.width=4}
+p <- ggplot(
+  Cal_curve2,          #上記で作ったデータ名を入れる
+  aes (
+    x = Conc,          # x 軸にConcを指定
+    y = value          # y 軸に実測値(Value)を指定
+  ) 
+)
+
+p <- p + geom_point()  #点の作図
+
+p <- p + stat_smooth(  # 近似直線を追加するための関数
+  method = "lm",       # 上記で求めた線形回帰の結果を当てはめる
+  se = FALSE,          # 信頼区間をつけるかどうか
+  colour = "black",    # 線の色
+  size = 1)            # 線の太さ
+
+p <- p + xlab("Analyzed value (ng)")    # x軸ラベル
+p <- p + ylab("Amounts of compound (ng)")    # y軸ラベル
+p <- p + ggtitle("Calibration curve (R^2 = 0.9998)") # グラフタイトル, R^2の値もあわせて記載
+
+plot(p)
+```
+
+この結果から、新しく提案した手法は0.1 - 100ngの測定範囲において、十分な直線性 (R^2 = `r cor(Cal_curve2$value, Cal_curve2$Conc)`) を有していた。
+
+```{r, include=FALSE}
+ILOD <- read_csv("~/GitHub/ScienceR/chapter4/Data/data_4_5_2.csv")
+```
+
+```{r}
+sd(ILOD$Value)*3.3
+```
+また、この測定条件における検出下限値は`r sd(ILOD$Value)*3.3`ngであった。
+
+```{r, include=FALSE}
+Comp_reg <- read_csv("~/GitHub/ScienceR/chapter4/Data/data_4_5_4.csv")
+```
+
+
+```{r, echo=FALSE, fig.height=6.2, fig.width=6}
+Paba_reg <-  mcreg(Comp_reg$Previous, Comp_reg$New,  
+                   error.ratio = 1, 
+                   alpha = 0.05,  
+                   method.reg = "PaBa", 
+                   method.ci ="bootstrap",
+                   method.bootstrap.ci = "BCa",
+                   nsamples = 999, 
+                   rng.seed = 71,
+                   mref.name = "Previous", 
+                   mtest.name = "New"
+                   )
+plot(Paba_reg)
+```
+
+この時の傾きは`r Paba_reg@para[2, 1]`、95%信頼区間は`r Paba_reg@para[2, 3]`-`r Paba_reg@para[2, 4]`であり、傾きの95%信頼区間である`Slope`の`LCI`, `UCI`が0を含んでいることから、2つの分析法の測定値に差はないことが推察される。
+
+
+#実行環境
+```{r}
+session_info()
+```
+#References {#references .unnumbered}

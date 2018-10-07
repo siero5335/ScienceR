@@ -1,0 +1,307 @@
+# 2章code
+
+```{r}
+#install.packages()でパッケージをインストール
+install.packages("readr") 
+```
+
+```{r}
+#データ読み込みのためのパッケージ読み込み
+library(readr) 
+
+#読み込み先の作業ディレクトリは作業環境に合わせ適宜変更する
+pre_work <- read_csv("~/GitHub/ScienceR/chapter2/Data/data_2.csv")
+```
+
+```{r}
+View(pre_work)
+```
+
+```{r}
+install.packages("readxl")
+```
+
+```{r}
+library(readxl) 
+
+# sheet = "対象シート" で読み込むシートを指定
+pre_work_2 <- read_excel("~/GitHub/ScienceR/chapter2/Data/data_2.xlsx", sheet = "Sheet2")
+```
+
+```{r}
+library(readr)
+pre_work <- read_csv("~/GitHub/ScienceR/chapter2/Data/data_2.csv")
+```
+
+```{r}
+head(pre_work)
+```
+
+```{r}
+str(pre_work)
+```
+
+```{r}
+summary(pre_work)
+```
+
+```{r}
+summary(pre_work$Food_A)
+```
+
+```{r}
+mean(pre_work$Food_A) #平均
+sd(pre_work$Food_A)   #標準偏差
+var(pre_work$Food_A)  #分散
+```
+
+```{r}
+pre_work$Gender <- factor(pre_work$Gender, #factorに変更
+                          levels = c("Male", "Female"))  #Maleを1, Femaleを2に指定
+```
+
+```{r}
+is.factor(pre_work$Gender) #変更確認
+```
+
+```{r}
+summary(pre_work)
+```
+
+```{r}
+summary(subset(pre_work, Gender == 'Female')) #女性のみを抽出
+```
+
+```{r}
+install.packages("ggplot2")
+```
+
+```{r}
+library(ggplot2)
+```
+
+```{r}
+p <- ggplot(pre_work,     # データフレームを指定
+     aes(Age, Food_A)) +  # 解析対象の列を指定
+     geom_point()         # 散布図なのでpointで作図することを指定
+
+plot(p)
+```
+
+```{r}
+p +  geom_point(aes(color = Gender)) +
+     scale_colour_manual(
+      values = c(
+       Male  = "black",
+       Female  = "red"
+      )
+     )
+```
+
+```{r}
+p +  geom_point(size = 5, aes(shape = Gender))
+```
+
+```{r}
+p + stat_smooth(method ="lm")
+```
+
+```{r}
+summary(pre_work)
+```
+
+```{r}
+p <- ggplot(pre_work,     # データを指定
+     aes(Height, Weight)) +  # x, y軸をそれぞれ指定
+     geom_point(aes(color = Gender)) # 性差について色分け
+
+plot(p)
+```
+
+```{r}
+subset(pre_work, Height < 80)
+```
+
+```{r}
+data2_work <- pre_work
+data2_work[c(62, 79), ] <- data2_work[c(62, 79), c(1,2,3,5,4,6,7)]   #現在の並び順を入れ替えて元の位置に代入する
+data2_work[c(62, 79), ]
+```
+
+```{r}
+p <- ggplot(data2_work,     
+            aes(Height, Weight)) +  
+            geom_point(aes(color = Gender))
+
+plot(p)
+```
+
+```{r}
+#現在の並び順を入れ替えて元の位置に代入する
+data2_work[c(62, 79),]$BMI <- 
+  round(data2_work[c(62, 79), ]$Weight/(data2_work[c(62, 79), ]$Height/100)^2, 
+        digits = 1)
+
+data2_work[c(62, 79), ]$BMI 
+```
+
+```{r}
+summary(data2_work)
+```
+
+```{r}
+write_csv(data2_work, "data2_work.csv")
+```
+
+```{r}
+#身長80センチ以上の対象を抽出
+working_df_remove <- subset(pre_work, Height > 80)
+
+#データフレーム概要確認
+str(working_df_remove)
+```
+
+```{r}
+p <- ggplot(data2_work,                          
+            aes(                         
+                x = Gender,               
+                y = BMI                  
+               )
+            )
+p <- p + geom_boxplot()        
+plot(p)
+```
+
+```{r}
+p <- ggplot(data2_work, aes(x = BMI))
+
+p <- p + geom_histogram(aes(fill = Gender), binwidth = 1)
+plot(p)
+```
+
+```{r}
+p <- ggplot(data2_work, aes(x = BMI))
+
+p <- p + geom_density(aes(color = Gender))
+plot(p)
+```
+
+```{r}
+library(readr)
+working_df <- read_csv("~/GitHub/ScienceR/chapter2/Data/data2_work.csv")
+```
+
+```{r}
+library(ggplot2)
+
+p <- ggplot(working_df,      #データフレームを指定
+            aes(BMI, Food_A) #解析対象の列を指定
+            ) 
+p <- p + geom_point()        #散布図を指定
+
+plot(p) #上記をプロット
+```
+
+```{r}
+p <- ggplot(working_df,   #データフレームを指定
+            aes(BMI)      #解析対象の列を指定
+            ) 
+p <- p + geom_histogram() #ヒストグラムを指定
+
+plot(p) #上記をプロット
+```
+
+```{r}
+p <- ggplot(working_df,   #データフレームを指定
+            aes(Food_A)   #解析対象の列を指定
+            )  
+p <- p + geom_histogram() #ヒストグラムを指定
+
+plot(p) #上記をプロット
+```
+
+```{r}
+cor.test(working_df$Food_A, #xを指定
+         working_df$BMI,    #yを指定
+         method="spearman") #Spearman's correlationを指定
+```
+
+```{r}
+cor.test(working_df$Food_A, #xを指定
+         working_df$BMI,    #xを指定
+         method="pearson")  #Pearson' correlationを指定
+```
+
+```{r}
+#男性データ抽出
+Male_df <- subset(working_df, Gender == "Male") 
+
+#女性データ抽出
+Female_df <- subset(working_df, Gender == "Female") 
+```
+
+```{r}
+install.packages("lawstat")
+```
+
+```{r}
+library(lawstat)
+brunner.munzel.test(Male_df$Food_A, Female_df$Food_A)
+```
+
+```{r}
+#Student's t-test
+t.test(Male_df$Food_A, Female_df$Food_A, var.equal=TRUE) 
+```
+
+```{r}
+#Welch's t test
+t.test(Male_df$Food_A, Female_df$Food_A, var.equal=FALSE) 
+```
+
+```{r}
+#Mann-Whitney U test
+wilcox.test(Male_df$Food_A, Female_df$Food_A) 
+```
+
+```{r}
+#データ読み込みのためのパッケージ読み込み
+library(readr) 
+
+#作業ディレクトリは適宜変更
+working_df <- read_csv("~/GitHub/ScienceR/chapter2/Data/data2_work.csv")
+
+Female_df <- subset(working_df, Gender == "Female") 
+```
+
+```{r}
+#単回帰モデル
+lm_female <- lm(BMI ~ Food_A, data = Female_df)
+
+#結果表記
+summary(lm_female)
+```
+
+```{r}
+#重回帰モデル
+lm_female <- lm(BMI ~ Food_A + Age, data = Female_df)
+summary(lm_female)
+```
+
+```{r}
+#一般化線形モデル: 対数正規分布, 単変量
+glm_df1 <- glm(BMI ~ Food_A, data = working_df, family = gaussian(link = log))
+summary(glm_df1)
+```
+
+```{r}
+#一般化線形モデル: ガンマ分布, 単変量
+glm_df2 <- glm(BMI ~ Food_A, data = working_df, family = Gamma(link = identity))
+summary(glm_df2)
+```
+
+```{r}
+#一般化線形モデル: 多変量
+glm_df3 <- glm(BMI ~ Food_A + Gender, data = working_df, family = Gamma(link = identity))
+summary(glm_df3)
+```

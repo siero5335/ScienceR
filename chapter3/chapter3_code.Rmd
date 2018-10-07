@@ -1,0 +1,300 @@
+# 3章code
+
+```{r}
+library(readr) 
+workdata <- read_csv("~/GitHub/ScienceR/chapter3/Data/data_3.csv")
+```
+
+```{r}
+head(workdata) # データの頭から6つめまで表示
+str(workdata)  # 変数名、データ型の一覧に有用
+View(workdata) # RStudioの新しいタブで表計算シートの形式で表示
+```
+
+```{r}
+workdata$City <- factor(workdata$City)
+workdata$Gender <- factor(workdata$Gender)
+summary(workdata)
+```
+
+```{r}
+# 簡略化のため1, 3, 4列のみを要約
+by(workdata[, c(1, 3, 4)], workdata$City, summary)
+```
+
+```{r}
+install.packages("tableone")
+```
+
+```{r}
+library(tableone) # パッケージ読み込み
+val_list <- colnames(workdata) # すべての変数を使うので列名をそのまま代入
+cat_list <- c("City", "Gender") # カテゴリ変数を指定
+```
+
+```{r}
+table1 <- CreateTableOne(vars = val_list,  # 変数のリストを指定
+                         data = workdata,  # データ全体を指定
+                         factorVars = cat_list) # カテゴリ変数のリストを指定
+table1
+```
+
+```{r}
+cat_list <- c("Gender") #カテゴリ変数を指定
+table1_2 <- CreateTableOne(vars = val_list,  #変数のリストを指定
+                         data = workdata,  #データ全体を指定
+                         strata = "City",  #群分けしたい変数の指定
+                         factorVars = cat_list) #カテゴリ変数のリストを指定
+table1_2
+```
+
+```{r}
+print(table1_2, nonnormal = c("Food"), quote = TRUE)
+```
+
+```{r}
+install.packages("GGally")
+```
+
+```{r}
+library(ggplot2)
+library(GGally)
+ggpairs(data = workdata)
+```
+
+```{r}
+p <- ggpairs(data = workdata[, -3],
+        mapping = aes(color = City), # 都市で色分け
+        upper=list(continuous=wrap("cor", size=3))) # 相関の文字サイズ変更
+
+
+for(i in 1:p$nrow) {
+  for(j in 1:p$ncol){
+    p[i,j] <- p[i,j] + 
+        scale_fill_manual(values=c("red", "black", "white")) +
+        scale_color_manual(values=c("red", "black", "white"))  
+  }
+}
+
+p
+```
+
+```{r}
+p2 <- ggpairs(data = workdata[, -2],
+        mapping = aes(color = Gender), # 性別で色分け
+        upper=list(continuous=wrap("cor", size=3))) # 相関の文字サイズ変更
+
+for(i in 1:p2$nrow) {
+  for(j in 1:p2$ncol){
+    p2[i,j] <- p2[i,j] + 
+        scale_fill_manual(values=c("red", "black")) +
+        scale_color_manual(values=c("red", "black"))  
+  }
+}
+
+p2
+```
+
+```{r}
+install.packages("FactoMineR")
+install.packages("factoextra")
+```
+
+```{r}
+library(FactoMineR)
+pca_res <- PCA(workdata[, -c(2, 3)],  
+               graph = FALSE)
+```
+
+```{r}
+library(factoextra)
+fviz_screeplot(pca_res, # 上記で作成・保存したPCAの結果
+               addlabels = TRUE, # ラベルを表示するかどうか
+               ylim = c(0, 50))　# 縦軸の下限・上限の指定
+```
+
+```{r}
+fviz_pca_var(pca_res, # 上記で作成・保存したPCAの結果
+             axes = c(1, 2), # 表示したい成分の指定
+             col.var = "contrib", # 寄与率を色で表記
+             repel = TRUE # ラベル表記の重なりをなるべく避ける
+             )
+```
+
+```{r}
+fviz_pca_var(pca_res, # 上記で作成・保存したPCAの結果
+             axes = c(2, 3), # 表示したい成分の指定
+             col.var = "contrib", # 寄与率を色で表記
+             repel = TRUE # ラベル表記の重なりをなるべく避ける
+             )
+```
+
+```{r}
+fviz_contrib(pca_res, # 上記で作成・保存したPCAの結果
+             choice = "var", # 変数を指定
+             axes = 1) # 寄与率を見たい成分の指定
+```
+
+```{r}
+fviz_pca_ind(pca_res, 
+             col.ind = "cos2",
+             repel = TRUE # ラベル表記の重なりをなるべく避ける
+             )
+```
+
+```{r}
+fviz_contrib(pca_res, 
+             choice = "ind", 
+             axes = 1, 
+             top = 10)
+```
+
+```{r}
+fviz_pca_ind(pca_res, 
+             habillage = workdata$City, # 色分けしたいグループの指定
+             repel = TRUE, # ラベル表記の重なりをなるべく避ける
+             addEllipses = TRUE # 円の表示をするかどうか
+             )
+```
+
+```{r}
+fviz_pca_biplot(pca_res, 
+                habillage = workdata$City, # 色分けしたいグループの指定
+                geom="point",  # 点の表示
+                pointsize = 3, # 点の大きさ指定
+                repel = TRUE)
+```
+
+```{r}
+summary(workdata)
+```
+
+```{r}
+res_t_test <- apply(workdata[, -c(2, 3)], 2, 
+                    function(x) t.test(x ~ workdata$Gender)$p.value)
+res_t_test
+```
+
+```{r}
+res_wilcox_test <- apply(workdata[, -c(2, 3)], 2, 
+                         function(x)  wilcox.test(x ~ workdata$Gender)$p.value)
+res_wilcox_test
+```
+
+```{r}
+res_ANOVA_test <- apply(workdata[, -c(2, 3)], 2, 
+                        function(x)  anova(aov(x ~ workdata$City))$`Pr(>F)`)
+res_ANOVA_test[1, ]
+```
+
+```{r}
+res_kruskal_test <- apply(workdata[, -c(2, 3)], 2, 
+                          function(x)  kruskal.test(x ~ workdata$City)$p.value)
+res_kruskal_test
+```
+
+```{r}
+res_tukeyHSD_test <- apply(workdata[, -c(2, 3)], 2, 
+                     function(x)  TukeyHSD(aov(x ~ workdata$City))$`workdata$City`[, 4])
+res_tukeyHSD_test
+```
+
+```{r}
+install.packages("PMCMRplus")
+```
+
+```{r}
+library(PMCMRplus)
+res_pairt_test <- apply(workdata[, -c(2, 3)], 2, 
+                        function(x)  kwAllPairsNemenyiTest(x ~ workdata$City)$p.value)
+res_pairt_test
+```
+
+```{r}
+summary(workdata)
+```
+
+```{r}
+res_lm <- lm(Conc ~., data = workdata)
+summary(res_lm)
+```
+
+```{r}
+library(GGally)
+library(ggplot2)
+ggpairs(data = workdata[, -2],
+        mapping = aes(color = Gender), # 性別で色分け
+        upper=list(continuous=wrap("cor", size=3))) # 相関の文字サイズ変更
+```
+
+```{r}
+ggpairs(data = workdata[, -3],
+        mapping = aes(color = City), # 都市で色分け
+        upper=list(continuous=wrap("cor", size=3))) # 相関の文字サイズ変更
+```
+
+```{r}
+install.packages("rstan", dependencies = TRUE)
+install.packages("rstanarm")
+```
+
+```{r}
+library(rstanarm)
+bayes_res <- stan_glm(Conc ~., 
+                      data = workdata, 
+                      family = gaussian, # 分布の指定
+                      seed = 71) # 乱数固定
+```
+
+```{r}
+summary(bayes_res)
+```
+
+```{r}
+bayes_gamma_res <- stan_glm(Conc ~., 
+                            data = workdata, 
+                            family = Gamma('identity'), # 分布の指定
+                            seed = 71) # 乱数固定
+```
+
+```{r}
+summary(bayes_gamma_res)
+```
+
+```{r}
+bayes_gender_res <- stan_glmer(Conc ~ Age + (1|Gender), # 切片に性差があると仮定
+                               data = workdata, 
+                               family = Gamma('identity'), # 分布の指定
+                               seed = 71) # 乱数固定
+```
+
+```{r}
+summary(bayes_gender_res)
+```
+
+```{r}
+bayes_city_res <- stan_glmer(Conc ~ (0 + Age|City), #年齢の傾きに都市差が影響すると仮定
+                             data = workdata, 
+                             family = Gamma('identity'), # 分布の指定
+                             seed = 71) # 乱数固定
+```
+
+```{r}
+summary(bayes_city_res)
+```
+
+```{r}
+# 結果が出るまで筆者のPCで約3分
+bayes_city_age_res <- stan_glmer(Conc ~ (0 + Age|City) # 年齢の傾きに都市差が影響すると仮定
+                                 + (1|Gender), # 切片に性差があると仮定
+                                 data = workdata, 
+                                 family = Gamma('identity'), # 分布の指定
+                                 seed = 71,   # 乱数固定
+                                 iter = 5000, # サンプリングの回数
+                                 warmup = 1000, # 安定するまでのサンプリングデータ切り捨て数
+                                 thin = 2)      # 自己相関回避のため一つ飛ばしにサンプリング
+```
+
+```{r}
+summary(bayes_city_age_res)
+```

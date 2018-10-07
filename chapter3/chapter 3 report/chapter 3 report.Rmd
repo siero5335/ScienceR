@@ -1,0 +1,104 @@
+---
+title: chapter 3 report
+
+bibliography: mybibfile.bib
+output: 
+  html_document:
+    toc: true
+    number_section: true
+---
+
+```{r warning=FALSE, message=FALSE, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE)
+```
+
+#はじめに
+本研究ではアンケート調査により得られた参加者情報 (n = 100) を元に、血中化学物質濃度とアンケート調査結果の関係について解析を試みた。アンケート調査内容は、参加者年齢・性別・居住地・body mass index (BMI)・食物摂取量・飲水量・血中化学物質濃度である。データはR version 3.4.3により解析した(@Rcitation2017)。
+
+```{r, include=FALSE}
+# 使用するパッケージの呼び出し
+library(readr); library(ggplot2); library(lawstat); library(rstanarm)
+library(tableone); library(GGally); library(sessioninfo)
+
+# 読み込み先の作業ディレクトリは作業環境に合わせ適宜変更する
+workdata <- read_csv("~/GitHub/ScienceR/chapter3/Data/data_3.csv")
+```
+
+# 方法
+本研究ではアンケート調査により得られた参加者情報 (n = 100) を元に、血中化学物質濃度アンケート調査結果の関係を解析した。アンケート調査内容は、参加者年齢・性別・居住地・body mass index (BMI)・食物摂取量・飲水量・血中化学物質濃度である。データはR version 3.4.3により解析した (@Rcitation2017)。  
+
+参加者属性の出力には**`tableone`**パッケージを用いた (@tableone_ref)。相関解析にはSpearman's correlationを利用し、都市ごと・性別ごとに各変数どうしの関係を解析した。解析において有意水準は p = 0.05とした。作図には**`ggplot2`**パッケージ (@ggplot2_book) および **`GGally`**パッケージ (@GGally_ref) を用いた。階層ベイズモデルには**`rstan`**パッケージ (@rstan_ref) および **`rstanarm`**パッケージ (@rstanarm_ref) を用い、解析を行った。ハミルトニアンモンテカルロ法 (HMC) によるサンプリング回数は5000回とし、うち1000回はバーンイン期間として4 chainのサンプリングを行った。また、自己相関を回避するためthin = 2としてHMCによるサンプリングデータの2つに1つを保存することとした。目的変数はガンマ分布に従うと仮定し、リンク関数による目的変数の変換は行わなかった。事前分布は**`rstanarm`**のデフォルト設定に従った（`prior_summary(bayes_city_age_res)`により確認可）。
+
+# 参加者属性
+まず都市ごとに参加者属性を出力した。出力には**`tableone`**パッケージを用いた (@tableone_ref)。
+```{r, include=FALSE}
+val_list <- colnames(workdata) # すべての変数を使うので列名をそのまま代入
+```
+
+```{r, echo=FALSE}
+cat_list <- c("Gender") #カテゴリ変数を指定
+table1 <- CreateTableOne(vars = val_list,  # 変数のリストを指定
+                         data = workdata,  # データ全体を指定
+                         strata = "City",  # 群分けしたい変数の指定
+                         factorVars = cat_list) #カテゴリ変数のリストを指定
+table1
+```
+
+比較の結果、都市間で血中化学物質濃度には優位な差が認められたが、性別・年齢・BMI・食物摂取量・飲水量の間には有意な差は認められなかった。
+
+# 相関解析
+まずはじめに因子どうしの相関関係について、都市ごとに層別した場合における解析を試みた。
+```{r, echo=FALSE, fig.height=6, fig.width=10}
+ggpairs(data = workdata[, -3],
+        mapping = aes(color = City),
+        upper = list(
+         continuous = wrap('cor', method = "spearman", size = 3, hjust = 0.8)
+         )
+        )
+```
+
+
+解析の結果、年齢と血中化学物質濃度の間には都市を問わず関係がありそうなことがわかるが、その他の因子どうしについては明確な関係を見て取ることはできなかった。また、年齢と血中化学物質濃度の関係については、都市ごとに傾きが異なる傾向が見て取れた。
+
+続いて因子どうしの相関関係について、性別ごとに層別した場合における解析を試みた。
+```{r, echo=FALSE, fig.height=6, fig.width=10}
+ggpairs(data = workdata[, -2],
+        mapping = aes(color = Gender),
+        upper = list(
+         continuous = wrap('cor', method = "spearman", size = 3, hjust = 0.8)
+         )
+        )
+```
+
+
+先程と同様に、解析の結果、年齢と血中化学物質濃度の間には性別を問わず関係がありそうなことがわかるが、その他の因子どうしについては明確な関係を見て取ることはできなかった。また、年齢と血中化学物質濃度の関係については、傾きは類似であるものの、切片が異なっている傾向が見て取れた。
+
+# 階層ベイズモデル
+相関解析の結果、血中化学物質濃度と年齢の関係において、切片には性差、傾きには都市ごとに差があることが示唆された。このため、以下のように階層ベイズモデルを用いたモデルを構築した。
+
+```{r, results="hide"}
+# 結果が出るまで筆者のPCで約3分
+bayes_city_age_res <- stan_glmer(Conc ~ (0 + Age|City) # 年齢の傾きに都市差が影響すると仮定
+                                 + (1|Gender), # 切片に性差があると仮定
+                                 data = workdata, 
+                                 family = Gamma('identity'), # 分布の指定
+                                 seed = 71, # 乱数固定
+                                 iter = 5000, # サンプリングの回数
+                                 warmup = 1000, # 安定するまでのサンプリングデータ切り捨て数
+                                 thin = 2)      # 自己相関回避のため一つ飛ばしにサンプリング
+```
+
+では結果を確認する。
+```{r}
+summary(bayes_city_age_res)
+```
+Diagnosticsを見ると、各変数のRhatはいずれも1.1を下回っており、モデルは収束したと考えてよい。図で収束を確認したい場合には、`plot(bayes_city_age_res, "trace", pars = "(Intercept)")`のように入力することで、各chainの値を描くことができる。  
+Estimatesのb[~]で表記されている部分が切片および傾きを表している部分である。それぞれの結果を見ると、切片については95%確信区間が0を跨いでいるが、傾きの推定値である`mean`は男女で約0.7SD分離れていることがわかる。また、都市ごとの違いにおいてはCity2の傾きの推定値が4.3であり、その他の都市が2.9と2.7、SDが0.2であることから、年齢と化学物質濃度の間の関係において、City2における化学物質曝露については、他の都市と異なる要因が存在する可能性がある。
+
+
+# 実行環境
+```{r}
+session_info()
+```
+# References {#references .unnumbered}
+````

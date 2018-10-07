@@ -1,0 +1,304 @@
+---
+title: chapter 6 report
+
+bibliography: mybibfile.bib
+output: 
+  html_document:
+    toc: true
+    number_section: true
+---
+
+```{r warning=FALSE, message=FALSE, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE)
+```
+
+# はじめに
+    化学物質の構造情報から物性・毒性・薬効などを予測する定量的構造物性相関 (QSPR: Quantitative Structure-Property Relationship) や定量的構造活性相関 (QSAR: Quantitative Structure-Activity Relationship) は物性解析・薬効解析などの分野で広く用いられる手法の1つである。本研究では化学物質の構造についての分子記述子の数値から機械学習を使って融点を予測することを目的としたQSPRの実行例を挙げる。
+    
+```{r, include=FALSE}
+library(QSARdata); library(FactoMineR); library(factoextra)
+library(caret); library(glmnet); library(xgboost);
+library(rBayesianOptimization); library(sessioninfo)
+```
+
+```{r, include=FALSE}
+data(MeltingPoint)
+str(MP_Descriptors[, 1:10])
+```
+
+```{r, include=FALSE}
+temp_df <- data.frame(MP_Outcome, MP_Data, MP_Descriptors)
+
+working_df <- subset(temp_df, MP_Data == "Train")
+eval_df <- subset(temp_df, MP_Data == "Test")
+
+working_df$MP_Data <- NULL
+eval_df$MP_Data <- NULL
+```
+
+# 方法
+    本研究では`QSARdata`パッケージに格納されている化合物の分子記述子および融点のデータを利用する (@karthikeyan2005general)。解析として、まず`FactoMineR`パッケージを用いた主成分分析による可視化を行った(@karthikeyan2005general)。続いて`glmnet`, `caret`パッケージを通じたLasso回帰分析および、`xgboost`パッケージを用いた勾配ブースティングにより融点の予測を試みた (@caret2017, @tibshirani1996regression, @glmnet2010, @chen2016xgboost) 。本研究で対象とした化合物数は4401種であり、そのうちトレーニングセットには4126種、バリデーションデータには275種の化合物を指定した。評価指標はRMSEとし、トレーニングセットについて5-foldクロスバリデーションによりモデルを構築した。ハイパーパラメータは、lassoについては`caret`パッケージを用いた探索により、勾配ブースティングについては`rBayesianOptimization`パッケージを用いたベイズ最適化により最適化を試みた (@bopt160914)。
+
+## データの可視化
+```{r, include=FALSE}
+pca_res <- PCA(working_df, # 主成分分析を行うデータの指定
+               graph = FALSE, # 図の表示なし
+               ncp = 10) 
+```
+
+```{r, echo=FALSE, fig.height=4, fig.width=5}
+fviz_pca_var(pca_res, # 上記で作成・保存したPCAの結果
+             axes = c(1, 8), # 表示したい成分の指定
+             col.var="contrib", # 寄与率を色で表記
+             repel = TRUE,   # ラベルの重なりをなるべく回避
+             labelsize = 3,  # ラベルのフォントサイズ
+             select.var = list(name = "MP_Outcome") # 表示したい因子
+             )
+```
+
+主成分分析のローディングプロットで融点の分散が大きかった2つの成分、主成分1, 8を可視化した。主成分1の寄与率は32.5%、8の寄与率は2.4%だった。
+
+```{r, echo=FALSE, fig.height=6, fig.width=8}
+fviz_contrib(pca_res, # 上記で作成・保存したPCAの結果
+             choice = "var",  # 変数を指定
+             axes = 1,        # 寄与率を見たい成分の指定
+             top = 15)        # 上位いくつ目の成分まで表示するか
+
+```
+
+```{r, echo=FALSE, fig.height=6, fig.width=8}
+fviz_contrib(pca_res, # 上記で作成・保存したPCAの結果
+             choice = "var", # 変数を指定
+             axes = 8,       # 寄与率を見たい成分の指定
+             top = 15)       # 上位いくつ目の成分まで表示するか
+
+```
+
+主成分1, 8で寄与率の高かった因子をそれぞれ15種ずつ図示した。この結果、目的変数である融点は主成分1では15種の中に選ばれなかったが、主成分8においては12番目に寄与率が高い成分であることが示唆された。
+
+# 機械学習による予測モデル
+
+```{r, include=FALSE}
+set.seed(71)
+tr = trainControl(
+  method = "repeatedcv", # 最適化の方法
+  number = 5) # 5-fold CV
+```
+
+Lassoパラメータの最適化 {#lasso}
+---------------------
+
+```{r, include=FALSE}
+train_grid_lasso = expand.grid(alpha = 1 , lambda = 10 ^ (0:10 * -1)) 
+```
+
+```{r, include=FALSE}
+set.seed(71) #乱数の固定
+lasso_fit_reg = train(working_df[, c(2:203)],  # 説明変数
+                       working_df$MP_Outcome,  # 目的変数
+                       method = "glmnet",      # lassoが含まれるパッケージの指定
+                       tuneGrid = train_grid_lasso, # パラメータ探索の設定
+                       trControl=tr,                # クロスバリデーションの設定
+                       preProc = c("center", "scale"), # 標準化
+                       metric = "RMSE")        # 最適化する対象
+```
+
+```{r, echo=FALSE}
+lasso_fit_reg
+```
+Lassoのハイパーパラメータ最適化の結果、alpha = `r lasso_fit_reg$bestTune[1]`, lambda = `r lasso_fit_reg$bestTune[2]`の際にRMSEが最小であり、RsquaredとMAEについても同様だった。このため、これらの値により得られたモデルをバリデーションデータへの当てはめおよび変数重要度の算出に使用した。
+
+```{r, include=FALSE}
+# トレーニングセットに対する予測値
+pred_train_lasso <- predict(lasso_fit_reg, working_df[, c(2:203)]) 
+
+# テストセットに対する予測値
+pred_test_lasso <- predict(lasso_fit_reg, eval_df[, c(2:203)])
+```
+
+## Xgboostパラメータの最適化
+続いて勾配ブースティングのハイパーパラメータについて最適化を試みた。最適化の際、学習率`eta`は0.1、変数全体の何割を使ってモデルを作るかの指標`colsample_bytree`は0.7に固定して探索を試みた。
+```{r, include=FALSE}
+# トレーニング・バリデーションデータの読み込み
+train_x <- data.matrix(working_df[, c(2:203)])
+train_y <- data.matrix(working_df[, 1])
+
+test_x <- data.matrix(eval_df[, c(2:203)])
+test_y <- data.matrix(eval_df[, 1])
+
+train <- xgb.DMatrix(train_x, label = train_y)
+```
+
+```{r, include=FALSE}
+# クロスバリデーションの設定
+cv_folds <- KFold(train_y, 
+                  nfolds = 5,
+                  seed = 71)
+```
+
+```{r, include=FALSE}
+# ベイズ最適化の設定
+xgb_cv_bayesopt <- function(max_depth, min_child_weight, subsample, lambda, alpha) {
+  cv <- xgb.cv(params = list(booster = "gbtree", 
+                             eta = 0.1,
+                             max_depth = max_depth,
+                             min_child_weight = min_child_weight,
+                             subsample = subsample, 
+                             lambda = lambda, 
+                             alpha = alpha,
+                             colsample_bytree = 0.7,
+                             objective = "reg:linear",
+                             eval_metric = "rmse"),
+               data = train, 
+               folds = cv_folds, 
+               nround = 1000,
+               early_stopping_rounds = 20, 
+               maximize = FALSE, 
+               verbose = 0)
+  list(Score = cv$evaluation_log$test_rmse_mean[cv$best_iteration],
+       Pred = cv$pred)
+}
+```
+
+```{r, echo=FALSE}
+# ベイズ最適化の実行・実行に10~30分程度
+set.seed(71) 
+Opt_res <- BayesianOptimization(xgb_cv_bayesopt,
+                                bounds = list(max_depth = c(3L, 7L),
+                                              min_child_weight = c(1L, 10L),
+                                              subsample = c(0.7, 1.0),
+                                              lambda = c(0.5, 1), 
+                                              alpha = c(0.0, 0.5)), 
+                                init_points = 20, 
+                                n_iter = 30,
+                                acq = "ucb", 
+                                kappa = 5, 
+                                verbose = FALSE)
+```
+
+勾配ブースティングのハイパーパラメータ最適化の結果、上記の組み合わせにおいてトレーニングセットを用いた5-foldクロスバリデーションにおける平均RMSE値が最小となったため、この値を用いて再度モデルを構築し、バリデーションデータへの当てはめおよび変数重要度の算出を行った。
+
+```{r, include=FALSE}
+# ベイズ最適化により最適化されたパラメータの設定
+params <- list(
+  "booster"             = "gbtree",
+  "objective"           = "reg:linear",
+  "eval_metric"         = "rmse",
+  "eta"                 = 0.1,
+  "max_depth"           = 3,
+  "min_child_weight"    = 10,
+  "subsample"           = 0.7193,
+  "colsample_bytree"    = 0.7,
+  "alpha"               = 0.5,
+  "lambda"              = 0.5
+)
+```
+
+```{r, include=FALSE}
+# クロスバリデーションによるearly_stopping_roundsの最適化
+set.seed(71)
+
+cv_nround = 1000
+cv_test <- xgb.cv(params = params, data = train, nfold = 5, nrounds = cv_nround, 
+                 early_stopping_rounds = 20, maximize = FALSE, verbose = FALSE)
+
+cv_nround <- cv_test$best_iteration
+```
+
+```{r, include=FALSE}
+# 最適化したパラメータを用いて予測モデル構築・予測値の算出
+set.seed(71)
+model <- xgboost(data = train, 
+                 params = params, 
+                 nrounds = cv_nround, 
+                 verbose = FALSE)
+
+pred_train <- predict(model, train_x)
+pred_test <- predict(model, test_x)
+```
+
+## バリデーションセットを用いた検証
+ではバリデーションセットを使い、lassoモデルと勾配ブースティングモデルの精度を検証していく。まずlassoモデルの結果を示す。
+
+```{r, echo=FALSE, fig.height=4, fig.width=4}
+plot(pred_test_lasso,     # テストセットの予測値
+     eval_df$MP_Outcome,  # テストセットの実測値
+     pch = 16,            # プロットのマーク
+     col = 6,             # プロットの色
+     xlim = c(0, 400), 
+     ylim = c(0, 400), 
+     ann = F)             # 軸、タイトルを非表示
+
+par(new = T)   # 次の入力を重ね書きする
+
+plot(pred_train_lasso,       # トレーニングセットの予測値
+     working_df$MP_Outcome,  # トレーニングセットの実測値
+     pch = 21,               # プロットのマーク
+     col = 1,                # プロットの色
+     xlim = c(0, 400), 
+     ylim = c(0, 400))
+```
+
+
+トレーニングセット、テストセットそれぞれの`RMSE`が`r sqrt(mean((pred_train_lasso - working_df$MP_Outcome)^2))`、`r sqrt(mean((pred_test_lasso - eval_df$MP_Outcome)^2))`、`Rsquared`が`r cor(pred_train_lasso, working_df$MP_Outcome)^2`、`r cor(pred_test_lasso, eval_df$MP_Outcome)^2`と算出された。
+
+
+```{r, echo=FALSE, fig.height=4, fig.width=4}
+plot(pred_test,           # テストセットの予測値
+     eval_df$MP_Outcome,  # テストセットの実測値
+     pch = 16,            # プロットのマーク
+     col = 6,             # プロットの色
+     xlim = c(0, 400), 
+     ylim = c(0, 400), 
+     ann = F)             # 軸、タイトルを非表示
+
+par(new = T)   # 次の入力を重ね書きする
+
+plot(pred_train,             # トレーニングセットの予測値
+     working_df$MP_Outcome,  # トレーニングセットの実測値
+     pch = 21,               # プロットのマーク
+     col = 1,                # プロットの色
+     xlim = c(0, 400), 
+     ylim = c(0, 400))
+```
+
+トレーニングセット、テストセットそれぞれの`RMSE`が`r sqrt(mean((pred_train - working_df$MP_Outcome)^2))`、`r sqrt(mean((pred_test - eval_df$MP_Outcome)^2))`、`Rsquared`が`r cor(pred_train, working_df$MP_Outcome)^2`、`r cor(pred_test, eval_df$MP_Outcome)^2`と算出された。
+
+この結果を下記Tableにまとめる。
+
+
+|  Model, dataset   | RMSE    | Rsquared  |
+|----------------|------|--------|
+| Lasso Train        | `r sqrt(mean((pred_train_lasso - working_df$MP_Outcome)^2))`  | `r cor(pred_train_lasso, working_df$MP_Outcome)^2`  |
+| Lasso Valdation    | `r sqrt(mean((pred_test_lasso - eval_df$MP_Outcome)^2))` | `r cor(pred_test_lasso, eval_df$MP_Outcome)^2`  |
+| Xgboost Train      | `r sqrt(mean((pred_train - working_df$MP_Outcome)^2))`  | `r cor(pred_train, working_df$MP_Outcome)^2`  |
+| Xgboost Valdation  | `r sqrt(mean((pred_test - eval_df$MP_Outcome)^2))`  | `r cor(pred_test, eval_df$MP_Outcome)^2`  |
+
+これらより、トレーニングセットではRMSE、R<sup>2</sup>いずれもが、テストセットでRMSEが、勾配ブースティングにおいて良好な結果を示した。
+
+
+## 変数重要度
+
+最後にlasso、勾配ブースティングにより得られた変数重要度の違いについて確認する。
+
+```{r, echo=FALSE, fig.height=5, fig.width=4}
+plot(varImp(lasso_fit_reg), top = 20)
+```
+
+```{r, echo=FALSE, fig.height=5, fig.width=4}
+importance <- xgb.importance(colnames(test_x), model = model)
+xgb.ggplot.importance(importance, top_n = 20)
+```
+
+Lassoでは最も重要な因子としてファンデルワールス表面積 (van der Waals surface area: VSA) が抽出されている。続いて炭素数が選択された。VSAでは大きい分子は一般的に分子どうしの結合が強く、融点が高くなる傾向があるためリーズナブルな結果であった (@slovokhotov2004symmetry)。一方、勾配ブースティングではTPSA（トポロジカル極性表面積：Topological Polar Surface Area）が重要な因子として抽出され、続いて分子中の窒素数が選択された。TPSAは分子表面のうち極性を帯びている部分の表面積の近似値である。極性のある分子は電気的な結合力をもつため、極性のない分子に比べると融点などが高くなる傾向がある。この結果から、この因子が融点に関係するとして抽出されたことはリーズナブルと言えるだろう。実際に、同様の傾向がランダムフォレストを用いた融点予測においても報告されている (@mcdonagh2015predicting)。
+
+# 実行環境
+
+```{r, include=FALSE}
+options(width = 100) # session_info()出力の幅が広いため調整
+```
+
+```{r, message=FALSE}
+session_info()
+```
+#References {#references .unnumbered}
