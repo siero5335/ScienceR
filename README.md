@@ -1,7 +1,7 @@
 # Wonderful R シリーズ 第4巻『自然科学系論文を書くためのR入門 -Reproducible Research 実践』サポートページ
 
-章ごとにレポートとcodeを置いておきます。
-誤植・間違いなどありましたらIssuesにご記入いただけると幸いです。
+章ごとにレポートの.rmdファイルとcodeを置いておきます。
+誤植・間違いなどありましたらお手数おかけいたしますがIssuesにご記入いただけると幸いです。
 
 ## リンク
 * 共立出版の[「Wonderful R」シリーズのページ](http://www.kyoritsu-pub.co.jp/series/205/)
