@@ -12,7 +12,7 @@ output:
 knitr::opts_chunk$set(warning=FALSE, message=FALSE)
 ```
 
-#はじめに
+# はじめに
 本研究の目的は高速液体クロマトグラフ-高分解能質量分析計により得られた低分子代謝物 (メタボローム) の組成を機械学習により判別し、男女の違いに関わるマーカーを抽出することである。
 ```{r, include=FALSE}
 library(ropls); library(ComplexHeatmap); library(dplyr); library(qgraph); library(sessioninfo); library(FactoMineR); library(factoextra); library(caret); library(ggfortify); library(gridExtra);
@@ -27,11 +27,11 @@ working_df$age <- NULL
 working_df$bmi <- NULL
 ```
 
-#方法
+# 方法
 本研究では`ropls`パッケージに格納されている尿中メタボロームのデータを利用する (@thevenot2015analysis)。解析として、まず`FactoMine`パッケージを用いた主成分分析による可視化を行った(@FactoMineR2008)。続いて、caret`パッケージを通じたLasso回帰分析および、`xgboost`パッケージを用いた勾配ブースティングにより男女の違いに関わるマーカーを抽出することである。 (@caret2017, @tibshirani1996regression, @glmnet2010, @chen2016xgboost) 。
 対象とした検体数は`r nrow(sacurine$sampleMetadata)`人であり、`r ncol(sacurine$dataMatrix)`個のメタボロームを対象に解析を試みた。評価指標はAUCとし、トレーニングセットについて5-foldクロスバリデーションによりモデルを構築した。ハイパーパラメータは、lassoについては`caret`パッケージを用いた探索を、勾配ブースティングでは`rBayesianOptimization`パッケージを用いたベイズ最適化により最適化を試みた (@bopt160914)。
 
-#データ可視化
+# データ可視化
 主成分分析のローディングプロットで男女の分布が比較的離れていた、主成分5, 9を可視化した。主成分5の寄与率は4.1%、9の寄与率は2.6%だった。
 
 ```{r, include=FALSE}
@@ -70,10 +70,10 @@ fviz_contrib(pca_res, #上記で作成・保存したPCAの結果
 
 主成分5, 9で寄与率の高かった因子をそれぞれ5種づつ図示した。各主成分の寄与率は低いものの、これらの因子が男女差に関与している可能性が示唆された。
 
-#Lasso, Xgboostにより算出されるArea Under Curve (AUC) の比較
+# Lasso, Xgboostにより算出されるArea Under Curve (AUC) の比較
 では機械学習を用いて男女差を明確にするモデルを作成し、判別に寄与する変数の抽出を試みる。
 
-##Lassoパラメータ最適化
+## Lassoパラメータ最適化
 ```{r, include=FALSE}
 set.seed(71)
 trainIndex <- createDataPartition(working_df$gender, #目的変数指定
@@ -118,7 +118,7 @@ lasso_fit_class
 
 Lassoのハイパーパラメータ最適化の結果、alpha = `r lasso_fit_class$bestTune[1]`, lambda  = `r lasso_fit_class$bestTune[2]`の際にAUCが最大だった。このため、これらの値により得られたモデルをバリデーションデータへの当てはめおよび変数重要度の算出に使用した。
 
-##Xboostパラメーター最適化
+## Xboostパラメーター最適化
 続いて勾配ブースティングのハイパーパラメータ最適化を試みた。最適化の際、学習率`eta`は0.1、変数全体の何割を使ってモデル を作るかの指標`colsample_bytree`は0.7に固定して探索を試みた。
 ```{r, include=FALSE}
 library(ropls)
@@ -260,7 +260,7 @@ plot(p)
 ```
 この時LassoにおけるAUCは`r rocRes_lasso$auc`、感度`r rocRes_lasso$sensitivities`、特異度`r rocRes_lasso$specificities`、勾配ブースティングにおけるAUCは`r rocRes_xgb$auc`、感度`r rocRes_xgb$sensitivities`、特異度`r rocRes_xgb$specificities`であり、本研究におけるこれらの値はいずれもLassoが上回る結果となった。
 
-#変数重要度
+# 変数重要度
 ```{r, echo=FALSE, fig.height=5, fig.width=6}
 plot(varImp(lasso_fit_class), 
      top = 30)
@@ -305,10 +305,11 @@ grid.arrange(p1, p2, ncol = 2)
 ```
 
 これらの因子を男女別に箱ひげ図で可視化したところ、`Testosterone.glucuronide`は男性、`p.Anisic.acid`は女性で高い値を示すことが示唆された。`Testosterone.glucuronide`は尿中に排泄されるテストステロン (男性ホルモン) の代謝物であり (@testosterone2018)、男性で高値を示すことは理にかなっている。`p.Anisic.acid`はアニスシードと呼ばれるスパイスによく含まれるフェノール酸の1種である(@anisic2018。女性で高い値を示した理由は不明だが、食習慣・生活習慣の違いなどを反映している可能性がある。
-#実行環境
+
+# 実行環境
 ```{r, echo=FALSE}
 session_info()
 ```
-#References {#references .unnumbered}
+# References {#references .unnumbered}
 
 
