@@ -223,45 +223,37 @@ plot(p) #上記をプロット
 ```{r}
 cor.test(working_df$Food_A, #xを指定
          working_df$BMI,    #yを指定
-         method="spearman") #Spearman's correlationを指定
+         method = "spearman") #Spearman's correlationを指定
 ```
 
 ```{r}
 cor.test(working_df$Food_A, #xを指定
          working_df$BMI,    #xを指定
-         method="pearson")  #Pearson' correlationを指定
+         method = "pearson")  #Pearson' correlationを指定
 ```
 
 ```{r}
-#男性データ抽出
-Male_df <- subset(working_df, Gender == "Male") 
-
-#女性データ抽出
-Female_df <- subset(working_df, Gender == "Female") 
+install.packages("brunnermunzel")
 ```
 
 ```{r}
-install.packages("lawstat")
-```
-
-```{r}
-library(lawstat)
-brunner.munzel.test(Male_df$Food_A, Female_df$Food_A)
+library(brunnermunzel)
+brunnermunzel.test(Food_A ~ Gender, data = working_df)
 ```
 
 ```{r}
 #Student's t-test
-t.test(Male_df$Food_A, Female_df$Food_A, var.equal=TRUE) 
+t.test(Food_A ~ Gender, data = working_df, var.equal = TRUE) 
 ```
 
 ```{r}
 #Welch's t test
-t.test(Male_df$Food_A, Female_df$Food_A, var.equal=FALSE) 
+t.test(Food_A ~ Gender, data = working_df, var.equal = FALSE) 
 ```
 
 ```{r}
 #Mann-Whitney U test
-wilcox.test(Male_df$Food_A, Female_df$Food_A) 
+wilcox.test(Food_A ~ Gender, data = working_df) 
 ```
 
 ```{r}
@@ -271,6 +263,7 @@ library(readr)
 #作業ディレクトリは適宜変更
 working_df <- read_csv("~/GitHub/ScienceR/chapter2/Data/data2_work.csv")
 
+#女性データ抽出
 Female_df <- subset(working_df, Gender == "Female") 
 ```
 
