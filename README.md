@@ -6,3 +6,4 @@
 ## リンク
 * 共立出版の[「Wonderful R」シリーズのページ](http://www.kyoritsu-pub.co.jp/series/205/)
 * 共立出版の[『自然科学研究のためのR入門―再現可能なレポート執筆実践― 』のページ](http://www.kyoritsu-pub.co.jp/bookdetail/9784320112445)
+* [正誤表](https://github.com/siero5335/ScienceR/blob/master/errata/errata.md)
